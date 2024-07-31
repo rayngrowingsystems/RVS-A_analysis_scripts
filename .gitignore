@@ -1,0 +1,14 @@
+
+.idea/
+
+masks/mask_basil_legacy/__pycache__/
+
+scripts/arabidopsis_legacy/__pycache__/
+
+scripts/arabidopsis_test/__pycache__/
+
+scripts/basil_legacy/__pycache__/
+
+scripts/basil_test/__pycache__/
+
+*.pyc
