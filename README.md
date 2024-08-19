@@ -34,7 +34,8 @@ scripts, we welcome contributions.
 Instructions on how to create your own mask scrips will be linked here.
 
 ## License and Copyright
-© 2024 RAYN Growing Systems, All Rights Reserved. Licensed under the Apache License, Version 2.0
+© 2024 ETC Inc d/b/a RAYN Growing Systems. Licensed under the Apache License, Version 2.0
+You may not use the files in this repository except in compliance with the License.
 
 Trademark and patent info: [rayngrowingsystems.com/ip](https://rayngrowingsystems.com/ip/) \
 Third-party license agreement info: [etcconnect.com/licenses](https://www.etcconnect.com/licenses/) \
