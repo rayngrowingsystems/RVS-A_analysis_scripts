@@ -34,7 +34,7 @@ def create_mask(settings, mask_preview=True):
     fill_size = mask_options["fill_size"]
     dilate_pixel = mask_options["dilate_pixel"]
 
-    spectral_array = prepare_spectral_data(settings)
+    spectral_array = rayn_utils.prepare_spectral_data(settings)
 
     # get data from selected wavelength band
     if (selected_wl != "None") and (selected_wl != ""):
@@ -320,43 +320,6 @@ def draw_roi_overlay(img, roi_contour):
 
     for i, cnt in enumerate(roi_contour):
         cv2.drawContours(img, cnt.contours[0], -1, color, pcv.params.line_thickness)
-
-
-def prepare_spectral_data(settings):
-    # file and folder
-    img_file = settings["inputImage"]
-    # undistort and normalize
-    image_options = settings["experimentSettings"]["imageOptions"]
-
-    lens_angle = image_options["lensAngle"]
-    dark_normalize = image_options["normalize"]
-
-    # check if a .hdr file name was provided and set img_file to the binary location
-    if os.path.splitext(img_file)[1] == ".hdr":
-        img_file = os.path.splitext(img_file)[0]
-
-    else:
-        warnings.warn("No header file provided. Processing not possible.")
-        return
-
-    # begin masking workflow
-    spectral_data = pcv.readimage(filename=img_file, mode='envi')
-    spectral_data.array_data = spectral_data.array_data.astype("float32")  # required for further calculations
-    if spectral_data.d_type == np.uint8:  # only convert if data seems to be uint8
-        spectral_data.array_data = spectral_data.array_data / 255  # convert 0-255 (orig.) to 0-1 range
-
-    # normalize the image cube
-    if dark_normalize:
-        spectral_data.array_data = rayn_utils.dark_normalize_array_data(spectral_data)
-
-    # undistort the image cube
-    if lens_angle != 0:  # only undistort if angle is selected
-        cam_calibration_file = f"calibration_data/{lens_angle}_calibration_data.yml"  # select the data set
-        mtx, dist = rayn_utils.load_coefficients(cam_calibration_file)  # depending on the lens angle
-        spectral_data.array_data = rayn_utils.undistort_data_cube(spectral_data.array_data, mtx, dist)
-        spectral_data.pseudo_rgb = rayn_utils.undistort_data_cube(spectral_data.pseudo_rgb, mtx, dist)
-
-    return spectral_data
 
 
 def create_mask_preview(mask, settings, create_preview=True):
