@@ -22,6 +22,7 @@ import rayn_utils
 import sys
 import importlib
 import cv2
+from Helper import info_from_header_file
 
 
 # Default mask workflow. Selection of other mask scripts is possible in the UI.
@@ -227,7 +228,7 @@ def execute(feedback_queue, script_name, settings, mask_file_name):  # this is t
     pcv.outputs.add_metadata("camera", str, "rvs-berlin")
     pcv.outputs.add_metadata("timestamp", datetime.datetime, datetime.datetime.now())
 
-    data_file_name = os.path.normpath(out_folder + "/raw_data/" + image_name + ".json")
+    data_file_name = os.path.normpath(out_folder + "/RawData/" + image_name + ".json")
     path, file_name = os.path.split(data_file_name)
 
     if not os.path.exists(path):
