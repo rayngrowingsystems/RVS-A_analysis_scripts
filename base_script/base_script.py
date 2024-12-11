@@ -15,6 +15,7 @@
 import os
 import numpy as np
 import warnings
+import datetime
 
 from plantcv import plantcv as pcv
 import rayn_utils
@@ -221,6 +222,21 @@ def execute(feedback_queue, script_name, settings, mask_file_name):  # this is t
     # signal results
     signal_dict = {"imageFileName": image_file_name, "dict": results_dict}
     feedback_queue.put([script_name, 'results', signal_dict])
+
+    # experimental results processing
+    pcv.outputs.add_metadata("camera", str, "rvs-berlin")
+    pcv.outputs.add_metadata("timestamp", datetime.datetime, datetime.datetime.now())
+
+    data_file_name = os.path.normpath(out_folder + "/raw_data/" + image_name + ".json")
+    path, file_name = os.path.split(data_file_name)
+
+    if not os.path.exists(path):
+        os.makedirs(path)
+        print("Created folder " + path)
+
+    print("Writing raw data to " + data_file_name)
+    pcv.outputs.save_results(data_file_name, outformat="json")
+    pcv.outputs.clear()
 
 
 def get_display_name_for_chart(settings):
