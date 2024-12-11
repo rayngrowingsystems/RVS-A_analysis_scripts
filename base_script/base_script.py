@@ -15,10 +15,12 @@
 import os
 import numpy as np
 import warnings
+
 from plantcv import plantcv as pcv
 import rayn_utils
 import sys
 import importlib
+import cv2
 
 
 # Default mask workflow. Selection of other mask scripts is possible in the UI.
@@ -32,7 +34,7 @@ def create_mask(settings, mask_preview=True):
     fill_size = mask_options["fill_size"]
     dilate_pixel = mask_options["dilate_pixel"]
 
-    spectral_array = prepare_spectral_data(settings)
+    spectral_array = rayn_utils.prepare_spectral_data(settings)
 
     # get data from selected wavelength band
     if (selected_wl != "None") and (selected_wl != ""):
@@ -62,7 +64,10 @@ def execute(feedback_queue, script_name, settings, mask_file_name):  # this is t
     out_folder = settings["outputFolder"]
 
     # ROIs
-    roi_items = settings["experimentSettings"]["roiInfo"]["roiItems"]
+    roi_items = settings["experimentSettings"]["roiInfo"]["roiList"]
+    roi_mode_selection = settings["experimentSettings"]["roiInfo"]["detectionMode"]
+    roi_mode_types = ["partial", "cutto", "largest"]  # types available for plantcv.roi.filter
+    roi_mode = roi_mode_types[roi_mode_selection]
 
     # script specific settings (options are defined in the .config file)
     script_options = settings["experimentSettings"]["analysis"]["scriptOptions"]["general"]
@@ -70,13 +75,14 @@ def execute(feedback_queue, script_name, settings, mask_file_name):  # this is t
     analyze_index = script_options["analyze_index"]
     selected_index = script_options["index_selection"]
     analyze_shape = script_options["analyze_shape"]
+    roi_overlay = script_options["roi_overlay"]
     line_width = script_options["line_width"]
 
     # script specific settings for charting (options are defined in the .config file)
     plot_selection = settings["experimentSettings"]["analysis"]["chartOptions"]["plot_selection"]
 
     # set plantcv variables
-    pcv.params.line_thickness = line_width
+    pcv.params.line_thickness = int(line_width)
     pcv.params.debug = None
 
     # determine mask script based on the chosen option
@@ -108,14 +114,16 @@ def execute(feedback_queue, script_name, settings, mask_file_name):  # this is t
     feedback_queue.put([script_name, 'Processing: ' + spectral_array.filename])
 
     # copy unaltered pseudo rgb image for plotting results/debug information on it later
-    img_plant_labelled = np.copy(spectral_array.pseudo_rgb)
-    img_roi_labelled = np.copy(spectral_array.pseudo_rgb)
+    img_labelled = np.copy(spectral_array.pseudo_rgb)
 
-    # process ROI items forwarded from the UI
-    rois = process_rois(roi_items, img_roi_labelled)
+    if roi_items:  # only if ROIs are set
+        # process ROI items forwarded from the UI
+        rois = process_rois(roi_items, img_labelled, roi_debug=roi_overlay)
+        # identify objects in the ROIs
+        labeled_objects, n_obj = pcv.create_labels(mask=mask, rois=rois, roi_type=roi_mode)
 
-    # identify objects in the ROIs
-    labeled_objects, n_obj = pcv.create_labels(mask=mask, rois=rois, roi_type="partial")
+    else:  # if no ROIs are set, no ROI filter is applied
+        labeled_objects, n_obj = pcv.create_labels(mask=mask, rois=None)
 
     # analyzing objects
     if analyze_index:
@@ -127,10 +135,10 @@ def execute(feedback_queue, script_name, settings, mask_file_name):  # this is t
                                    label="plant")
 
     if analyze_shape:
-        img_plant_labelled = pcv.analyze.size(img=img_plant_labelled,
-                                              labeled_mask=labeled_objects,
-                                              n_labels=n_obj,
-                                              label="plant")
+        img_labelled = pcv.analyze.size(img=img_labelled,
+                                        labeled_mask=labeled_objects,
+                                        n_labels=n_obj,
+                                        label="plant")
 
     # return preview image
     image_file_name = os.path.normpath(out_folder + "/ProcessedImages/" + image_name + ".png")
@@ -138,15 +146,15 @@ def execute(feedback_queue, script_name, settings, mask_file_name):  # this is t
 
     if not os.path.exists(path):
         os.makedirs(path)
-        print("created folder " + path)
+        print("Created folder " + path)
 
     print("Writing image to " + image_file_name)
 
-    pcv.print_image(img=img_plant_labelled, filename=image_file_name)
+    pcv.print_image(img=img_labelled, filename=image_file_name)
 
     # Use feedbackQueue.put to send feedback to the main application
     # feedbackQueue.put([name, 'Processing images...'])
-    print("writing info to queue")
+    print("Writing info to queue")
     feedback_queue.put([script_name, 'preview', image_file_name])
 
     print("Workflow done")
@@ -265,68 +273,53 @@ def dropdown_values(setting, wavelengths):  # fills UI element with values
         return
 
 
-def process_rois(roi_items, rgb_image):  # get the rois from individual coordinates
+def process_rois(roi_items, rgb_image, roi_debug=False):  # get the rois from individual coordinates
     # creating empty ROI object
     rois = pcv.Objects(contours=[], hierarchy=[])
 
-    for roi_type, roi_x, roi_y, roi_width, roi_height in roi_items:
-        print("RoiItem:", roi_type, roi_x, roi_y, roi_width, roi_height)
+    for item in roi_items:
+        print("RoiItem:", item)
+
+        roi_type = item["type"]
+        roi_x = item["x"]
+        roi_y = item["y"]
+        roi_width = item["width"]
+        roi_height = item["height"]
 
         if roi_type == "Circle":
-            roi_radius = int(roi_width / 2)
-            # create a single circular roi
+            roi_radius = int(roi_width/2)
+            # create a single circular ROI
             roi = pcv.roi.circle(x=roi_x, y=roi_y, r=roi_radius, img=rgb_image)
         elif roi_type == "Rectangle":
-            # create a single rectangle roi
-            print("calculated x/y", roi_x - roi_width / 2, roi_y - roi_height / 2)
-            roi = pcv.roi.rectangle(x=roi_x - roi_width / 2, y=roi_y - roi_height / 2,
+            # create a single rectangle ROI
+            print("calculated x/y", roi_x - roi_width/2, roi_y - roi_height/2)
+            roi = pcv.roi.rectangle(x=roi_x - roi_width/2, y=roi_y - roi_height/2,
                                     h=roi_height, w=roi_width, img=rgb_image)
-
+        elif roi_type == "Ellipse":
+            roi_radius1 = int(roi_width/2)
+            roi_radius2 = int(roi_height/2)
+            # create a single elliptical ROI
+            roi = pcv.roi.ellipse(x=roi_x, y=roi_y, r1=roi_radius1, r2=roi_radius2, img=rgb_image, angle=0)
+        elif roi_type == "Polygon":
+            roi = pcv.roi.custom(vertices=item["points"], img=rgb_image)
         else:
-            warnings.warn("Roi type is neither circle or rectangle")
+            warnings.warn(f"ROI type {roi_type} not valid")
             break
 
         # append the roi contour and hierarchy to the object collecting all the rois
         rois.append(roi.contours, roi.hierarchy)
 
+        if roi_debug:
+            draw_roi_overlay(rgb_image, roi)
+
     return rois
 
 
-def prepare_spectral_data(settings):
-    # file and folder
-    img_file = settings["inputImage"]
-    # undistort and normalize
-    image_options = settings["experimentSettings"]["imageOptions"]
+def draw_roi_overlay(img, roi_contour):
+    color = (255, 0, 0)
 
-    lens_angle = image_options["lensAngle"]
-    dark_normalize = image_options["normalize"]
-
-    # check if a .hdr file name was provided and set img_file to the binary location
-    if os.path.splitext(img_file)[1] == ".hdr":
-        img_file = os.path.splitext(img_file)[0]
-
-    else:
-        warnings.warn("No header file provided. Processing not possible.")
-        return
-
-    # begin masking workflow
-    spectral_data = pcv.readimage(filename=img_file, mode='envi')
-    spectral_data.array_data = spectral_data.array_data.astype("float32")  # required for further calculations
-    if spectral_data.d_type == np.uint8:  # only convert if data seems to be uint8
-        spectral_data.array_data = spectral_data.array_data / 255  # convert 0-255 (orig.) to 0-1 range
-
-    # normalize the image cube
-    if dark_normalize:
-        spectral_data.array_data = rayn_utils.dark_normalize_array_data(spectral_data)
-
-    # undistort the image cube
-    if lens_angle != 0:  # only undistort if angle is selected
-        cam_calibration_file = f"calibration_data/{lens_angle}_calibration_data.yml"  # select the data set
-        mtx, dist = rayn_utils.load_coefficients(cam_calibration_file)  # depending on the lens angle
-        spectral_data.array_data = rayn_utils.undistort_data_cube(spectral_data.array_data, mtx, dist)
-        spectral_data.pseudo_rgb = rayn_utils.undistort_data_cube(spectral_data.pseudo_rgb, mtx, dist)
-
-    return spectral_data
+    for i, cnt in enumerate(roi_contour):
+        cv2.drawContours(img, cnt.contours[0], -1, color, pcv.params.line_thickness)
 
 
 def create_mask_preview(mask, settings, create_preview=True):
@@ -335,4 +328,3 @@ def create_mask_preview(mask, settings, create_preview=True):
         image_file_name = os.path.normpath(out_image)
         print("Writing image to " + image_file_name)
         pcv.print_image(img=mask, filename=image_file_name)
-
