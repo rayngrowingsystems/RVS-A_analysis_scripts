@@ -22,7 +22,6 @@ import rayn_utils
 import sys
 import importlib
 import cv2
-from Helper import info_from_header_file
 
 
 # Default mask workflow. Selection of other mask scripts is possible in the UI.
@@ -36,7 +35,7 @@ def create_mask(settings, mask_preview=True):
     fill_size = mask_options["fill_size"]
     dilate_pixel = mask_options["dilate_pixel"]
 
-    spectral_array = rayn_utils.prepare_spectral_data(settings)
+    spectral_array, rvs_metadata = rayn_utils.prepare_spectral_data(settings)
 
     # get data from selected wavelength band
     if (selected_wl != "None") and (selected_wl != ""):
@@ -55,7 +54,7 @@ def create_mask(settings, mask_preview=True):
     # creates mask preview image
     create_mask_preview(binary_img, settings, mask_preview)
 
-    return spectral_array, binary_img
+    return spectral_array, rvs_metadata, binary_img
 
 
 def execute(feedback_queue, script_name, settings, mask_file_name):  # this is the analysis workflow
@@ -81,7 +80,6 @@ def execute(feedback_queue, script_name, settings, mask_file_name):  # this is t
     line_width = script_options["line_width"]
 
     # script specific settings for charting (options are defined in the .config file)
-    plot_selection = settings["experimentSettings"]["analysis"]["chartOptions"]["plot_selection"]
 
     # set plantcv variables
     pcv.params.line_thickness = int(line_width)
@@ -105,7 +103,7 @@ def execute(feedback_queue, script_name, settings, mask_file_name):  # this is t
     print("Starting workflow")
 
     # retrieving preprocessed data cube and mask from another script
-    spectral_array, mask = create_function(settings, mask_preview=False)
+    spectral_array, rvs_metadata, mask = create_function(settings, mask_preview=False)
 
     # extract image name
     filename = spectral_array.filename
@@ -162,71 +160,12 @@ def execute(feedback_queue, script_name, settings, mask_file_name):  # this is t
     print("Workflow done")
 
     # ANALYSIS WORKFLOW END
-    # TODO: change how results are saved when the new PlantCV Version is published
 
-    # Processing results
-    results = pcv.outputs.observations
-    # TODO: this is currently very limited and inflexible. Needs to change!
-    results_dict = {}
-    results_list = []
-
-    index_key = "index_" + selected_index
-
-    if plot_selection == "plot_index" and analyze_index:
-        selected_key = "mean_" + index_key
-    else:
-        selected_key = plot_selection
-
-    for i in range(1, n_obj + 1):
-
-        if f"plant_{i}" in results:
-            roi_results = results[f"plant_{i}"]
-
-            if analyze_shape and not analyze_index:
-                results_list.append({"roi": i,
-                                     "area": roi_results["area"]["value"],
-                                     "width": roi_results["width"]["value"],
-                                     "height": roi_results["height"]["value"],
-                                     "perimeter": roi_results["perimeter"]["value"],
-                                     "index": None,
-                                     "mean": None,
-                                     "median": None,
-                                     "std": None,
-                                     "plot_value": roi_results[selected_key]["value"]})
-
-            if analyze_index and not analyze_shape:
-                results_list.append({"roi": i,
-                                     "area": None,
-                                     "width": None,
-                                     "height": None,
-                                     "perimeter": None,
-                                     "index": selected_index,
-                                     "mean": roi_results["mean_" + index_key]["value"],
-                                     "median": roi_results["med_" + index_key]["value"],
-                                     "std": roi_results["std_" + index_key]["value"],
-                                     "plot_value": roi_results[selected_key]["value"]})
-
-            if analyze_shape and analyze_index:
-                results_list.append({"roi": i,
-                                     "area": roi_results["area"]["value"],
-                                     "width": roi_results["width"]["value"],
-                                     "height": roi_results["height"]["value"],
-                                     "perimeter": roi_results["perimeter"]["value"],
-                                     "index": selected_index,
-                                     "mean": roi_results["mean_" + index_key]["value"],
-                                     "median": roi_results["med_" + index_key]["value"],
-                                     "std": roi_results["std_" + index_key]["value"],
-                                     "plot_value": roi_results[selected_key]["value"]})
-
-    results_dict["rois"] = results_list
-
-    # signal results
-    signal_dict = {"imageFileName": image_file_name, "dict": results_dict}
-    feedback_queue.put([script_name, 'results', signal_dict])
-
-    # experimental results processing
-    pcv.outputs.add_metadata("camera", str, "rvs-berlin")
-    pcv.outputs.add_metadata("timestamp", datetime.datetime, datetime.datetime.now())
+    # adding meta data to outputs
+    pcv.outputs.add_metadata("camera", str, rvs_metadata["camera"])
+    pcv.outputs.add_metadata("firmware", str, rvs_metadata["firmware version"])
+    pcv.outputs.add_metadata("timestamp", datetime.datetime,
+                             f"{rvs_metadata['capture date']} {rvs_metadata['capture time']}")
 
     data_file_name = os.path.normpath(out_folder + "/RawData/" + image_name + ".json")
     path, file_name = os.path.split(data_file_name)
@@ -234,10 +173,13 @@ def execute(feedback_queue, script_name, settings, mask_file_name):  # this is t
     if not os.path.exists(path):
         os.makedirs(path)
         print("Created folder " + path)
-
     print("Writing raw data to " + data_file_name)
+
     pcv.outputs.save_results(data_file_name, outformat="json")
     pcv.outputs.clear()
+
+    # signal results file
+    feedback_queue.put([script_name, 'results', data_file_name])
 
 
 def get_display_name_for_chart(settings):
