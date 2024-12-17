@@ -166,6 +166,7 @@ def execute(feedback_queue, script_name, settings, mask_file_name):  # this is t
     pcv.outputs.add_metadata("firmware", str, rvs_metadata["firmware version"])
     pcv.outputs.add_metadata("timestamp", datetime.datetime,
                              f"{rvs_metadata['capture date']} {rvs_metadata['capture time']}")
+    pcv.outputs.add_metadata("pixel_to_mm_factor", datetime.date, rvs_metadata["px to mm ratio"])
 
     data_file_name = os.path.normpath(out_folder + "/RawData/" + image_name + ".json")
     path, file_name = os.path.split(data_file_name)
