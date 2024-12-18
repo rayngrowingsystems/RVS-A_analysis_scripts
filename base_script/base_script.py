@@ -73,9 +73,7 @@ def execute(feedback_queue, script_name, settings, mask_file_name):  # this is t
     # script specific settings (options are defined in the .config file)
     script_options = settings["experimentSettings"]["analysis"]["scriptOptions"]["general"]
 
-    analyze_index = script_options["analyze_index"]
     selected_index = script_options["index_selection"]
-    analyze_shape = script_options["analyze_shape"]
     roi_overlay = script_options["roi_overlay"]
     line_width = script_options["line_width"]
 
@@ -125,37 +123,59 @@ def execute(feedback_queue, script_name, settings, mask_file_name):  # this is t
     else:  # if no ROIs are set, no ROI filter is applied
         labeled_objects, n_obj = pcv.create_labels(mask=mask, rois=None)
 
-    # analyzing objects
-    if analyze_index:
-        index_functions = rayn_utils.get_index_functions()
-        index_array = index_functions[selected_index][1](spectral_array, 10)
-        pcv.analyze.spectral_index(index_img=index_array,
-                                   labeled_mask=labeled_objects,
-                                   n_labels=n_obj,
-                                   label="plant")
+    # ANALYSES
+    # analyze shape
+    img_labelled = pcv.analyze.size(img=img_labelled, labeled_mask=labeled_objects, n_labels=n_obj, label="plant")
 
-    if analyze_shape:
-        img_labelled = pcv.analyze.size(img=img_labelled,
-                                        labeled_mask=labeled_objects,
-                                        n_labels=n_obj,
-                                        label="plant")
+    # analyze spectral reflectance
+    spectral_hist = pcv.analyze.spectral_reflectance(hsi=spectral_array, labeled_mask=labeled_objects, n_labels=n_obj,
+                                                     label="plant")
 
-    # return preview image
-    image_file_name = os.path.normpath(out_folder + "/ProcessedImages/" + image_name + ".png")
-    path, file_name = os.path.split(image_file_name)
+    # analyze reflectance index
+    index_functions = rayn_utils.get_index_functions()  # load all available index functions
+    index_array = index_functions[selected_index][1](spectral_array, 10)  # call the function of the selected index
+    index_hist = pcv.analyze.spectral_index(index_img=index_array, labeled_mask=labeled_objects, n_labels=n_obj,
+                                            label="plant")
 
-    if not os.path.exists(path):
-        os.makedirs(path)
-        print("Created folder " + path)
+    # create pseudocolor representation
+    index_pseudocolor = pcv.visualize.pseudocolor(gray_img=index_array.array_data, mask=mask,
+                                                  background="white", axes=False,
+                                                  colorbar=False, cmap='viridis',
+                                                  min_value=index_functions[selected_index][2],
+                                                  max_value=index_functions[selected_index][3])
 
-    print("Writing image to " + image_file_name)
+    # return preview image and
+    pseudo_rgb_file_name = os.path.normpath(f"{out_folder}/ProcessedImages/{image_name}_pseudoRGB.png")
+    spectral_hist_file_name = os.path.normpath(f"{out_folder}/VisualResults/{image_name}_spectral_histogram.png")
+    index_hist_file_name = os.path.normpath(f"{out_folder}/VisualResults/{image_name}_index_histogram.png")
+    index_pseudocolor_file_name = os.path.normpath(f"{out_folder}/VisualResults/{image_name}_index_pseudocolor.png")
 
-    pcv.print_image(img=img_labelled, filename=image_file_name)
+    path1, file_name = os.path.split(pseudo_rgb_file_name)
+    path2, file_name = os.path.split(spectral_hist_file_name)
+
+    if not os.path.exists(path1):
+        os.makedirs(path1)
+        print("Created folder " + path1)
+
+    if not os.path.exists(path2):
+        os.makedirs(path2)
+        print("Created folder " + path2)
+
+    print("Writing image to " + pseudo_rgb_file_name)
+    pcv.print_image(img=img_labelled, filename=pseudo_rgb_file_name)
+
+    print("Writing visual outputs to " + path2)
+    pcv.print_image(img=spectral_hist, filename=spectral_hist_file_name)
+    pcv.print_image(img=index_hist, filename=index_hist_file_name)
+    pcv.print_image(img=index_pseudocolor, filename=index_pseudocolor_file_name)
 
     # Use feedbackQueue.put to send feedback to the main application
     # feedbackQueue.put([name, 'Processing images...'])
     print("Writing info to queue")
-    feedback_queue.put([script_name, 'preview', image_file_name])
+    feedback_queue.put([script_name, 'preview', pseudo_rgb_file_name])
+    feedback_queue.put([script_name, 'spectral_hist', spectral_hist_file_name])
+    feedback_queue.put([script_name, 'index_hist', index_hist_file_name])
+    feedback_queue.put([script_name, 'index_pseudocolor', index_pseudocolor_file_name])
 
     print("Workflow done")
 
