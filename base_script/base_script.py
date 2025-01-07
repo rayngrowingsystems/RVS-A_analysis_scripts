@@ -57,7 +57,7 @@ def create_mask(settings, mask_preview=True):
     return spectral_array, rvs_metadata, binary_img
 
 
-def execute(feedback_queue, script_name, settings, mask_file_name):  # this is the analysis workflow
+def execute(feedback_queue, script_name, settings, mask_file_name, preview=False):  # this is the analysis workflow
     print("Execute:", script_name, settings)
 
     # Load parameters from the settings dict
@@ -145,26 +145,18 @@ def execute(feedback_queue, script_name, settings, mask_file_name):  # this is t
                                                   max_value=index_functions[selected_index][3])
 
     # return preview image and
-    pseudo_rgb_file_name = os.path.normpath(f"{out_folder}/ProcessedImages/{image_name}_pseudoRGB.png")
-    spectral_hist_file_name = os.path.normpath(f"{out_folder}/VisualResults/{image_name}_spectral_histogram.png")
-    index_hist_file_name = os.path.normpath(f"{out_folder}/VisualResults/{image_name}_index_histogram.png")
-    index_pseudocolor_file_name = os.path.normpath(f"{out_folder}/VisualResults/{image_name}_index_pseudocolor.png")
-
-    path1, file_name = os.path.split(pseudo_rgb_file_name)
-    path2, file_name = os.path.split(spectral_hist_file_name)
-
-    if not os.path.exists(path1):
-        os.makedirs(path1)
-        print("Created folder " + path1)
-
-    if not os.path.exists(path2):
-        os.makedirs(path2)
-        print("Created folder " + path2)
+    pseudo_rgb_file_name = os.path.normpath(f"{out_folder['images']}/{image_name}_pseudoRGB.png")
+    spectral_hist_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_spectral_histogram.png")
+    index_hist_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_index_histogram.png")
+    index_pseudocolor_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_index_pseudocolor.png")
 
     print("Writing image to " + pseudo_rgb_file_name)
     pcv.print_image(img=img_labelled, filename=pseudo_rgb_file_name)
 
-    print("Writing visual outputs to " + path2)
+    if preview:
+        return pseudo_rgb_file_name
+
+    print("Writing visual outputs to " + out_folder['visuals'])
     pcv.print_image(img=spectral_hist, filename=spectral_hist_file_name)
     pcv.print_image(img=index_hist, filename=index_hist_file_name)
     pcv.print_image(img=index_pseudocolor, filename=index_pseudocolor_file_name)
@@ -188,12 +180,8 @@ def execute(feedback_queue, script_name, settings, mask_file_name):  # this is t
                              f"{rvs_metadata['capture date']} {rvs_metadata['capture time']}")
     pcv.outputs.add_metadata("pixel_to_mm_factor", datetime.date, rvs_metadata["px to mm ratio"])
 
-    data_file_name = os.path.normpath(out_folder + "/RawData/" + image_name + ".json")
-    path, file_name = os.path.split(data_file_name)
+    data_file_name = os.path.normpath(out_folder["data"] + image_name + ".json")
 
-    if not os.path.exists(path):
-        os.makedirs(path)
-        print("Created folder " + path)
     print("Writing raw data to " + data_file_name)
 
     pcv.outputs.save_results(data_file_name, outformat="json")
