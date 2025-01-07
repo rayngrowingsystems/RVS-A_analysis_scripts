@@ -180,7 +180,7 @@ def execute(feedback_queue, script_name, settings, mask_file_name, preview=False
                              f"{rvs_metadata['capture date']} {rvs_metadata['capture time']}")
     pcv.outputs.add_metadata("pixel_to_mm_factor", datetime.date, rvs_metadata["px to mm ratio"])
 
-    data_file_name = os.path.normpath(out_folder["data"] + image_name + ".json")
+    data_file_name = os.path.normpath(out_folder["data"] + "/" + image_name + ".json")
 
     print("Writing raw data to " + data_file_name)
 
