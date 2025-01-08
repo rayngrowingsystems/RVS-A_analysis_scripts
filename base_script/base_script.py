@@ -77,34 +77,21 @@ def execute(feedback_queue, script_name, settings, mask_file_name, preview=False
     roi_overlay = script_options["roi_overlay"]
     line_width = script_options["line_width"]
 
-    # script specific settings for charting (options are defined in the .config file)
-
     # set plantcv variables
     pcv.params.line_thickness = int(line_width)
     pcv.params.debug = None
 
-    # determine mask script based on the chosen option
-    if mask_file_name != "":  # external mask script (= mask function defined in another file)
-        mask_path, mask_file = os.path.split(mask_file_name)
-        print("External mask file used: ", mask_file_name)
-
-        sys.path.append(mask_path)
-        mask_script = importlib.import_module(mask_file.replace(".py", ""))
-        create_function = mask_script.create_mask
-
-    else:  # default/internal mask script is used (= mask function defined in this script)
-        print("Internal mask used")
-        
-        create_function = create_mask
-
     # ANALYSIS WORKFLOW START
     print("Starting workflow")
 
-    # retrieving preprocessed data cube and mask from another script
+    # determine mask script based on the chosen option
+    create_function = _get_mask_function(mask_file_name)
+
+    # retrieving preprocessed data cube, meta data and mask
     spectral_array, rvs_metadata, mask = create_function(settings, mask_preview=False)
 
     # extract image name
-    filename = spectral_array.filename
+    filename = spectral_array.filename  # TODO move this to rvs_metadata
     image_name = os.path.split(filename)[-1]
     image_name = os.path.splitext(image_name)[0]
 
@@ -137,8 +124,8 @@ def execute(feedback_queue, script_name, settings, mask_file_name, preview=False
     index_hist = pcv.analyze.spectral_index(index_img=index_array, labeled_mask=labeled_objects, n_labels=n_obj,
                                             label="plant")
 
-    # create pseudocolor representation
-    index_pseudocolor = pcv.visualize.pseudocolor(gray_img=index_array.array_data, mask=mask,
+    # create false color representation
+    index_false_color = pcv.visualize.pseudocolor(gray_img=index_array.array_data, mask=mask,
                                                   background="white", axes=False,
                                                   colorbar=False, cmap='viridis',
                                                   min_value=index_functions[selected_index][2],
@@ -148,7 +135,7 @@ def execute(feedback_queue, script_name, settings, mask_file_name, preview=False
     pseudo_rgb_file_name = os.path.normpath(f"{out_folder['images']}/{image_name}_pseudoRGB.png")
     spectral_hist_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_spectral_histogram.png")
     index_hist_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_index_histogram.png")
-    index_pseudocolor_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_index_pseudocolor.png")
+    index_false_color_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_index_false_color.png")
 
     print("Writing image to " + pseudo_rgb_file_name)
     pcv.print_image(img=img_labelled, filename=pseudo_rgb_file_name)
@@ -159,7 +146,7 @@ def execute(feedback_queue, script_name, settings, mask_file_name, preview=False
     print("Writing visual outputs to " + out_folder['visuals'])
     pcv.print_image(img=spectral_hist, filename=spectral_hist_file_name)
     pcv.print_image(img=index_hist, filename=index_hist_file_name)
-    pcv.print_image(img=index_pseudocolor, filename=index_pseudocolor_file_name)
+    pcv.print_image(img=index_false_color, filename=index_false_color_file_name)
 
     # Use feedbackQueue.put to send feedback to the main application
     # feedbackQueue.put([name, 'Processing images...'])
@@ -167,7 +154,7 @@ def execute(feedback_queue, script_name, settings, mask_file_name, preview=False
     feedback_queue.put([script_name, 'preview', pseudo_rgb_file_name])
     feedback_queue.put([script_name, 'spectral_hist', spectral_hist_file_name])
     feedback_queue.put([script_name, 'index_hist', index_hist_file_name])
-    feedback_queue.put([script_name, 'index_pseudocolor', index_pseudocolor_file_name])
+    feedback_queue.put([script_name, 'index_false_color', index_false_color_file_name])
 
     print("Workflow done")
 
@@ -180,7 +167,7 @@ def execute(feedback_queue, script_name, settings, mask_file_name, preview=False
                              f"{rvs_metadata['capture date']} {rvs_metadata['capture time']}")
     pcv.outputs.add_metadata("pixel_to_mm_factor", datetime.date, rvs_metadata["px to mm ratio"])
 
-    data_file_name = os.path.normpath(out_folder["data"] + "/" + image_name + ".json")
+    data_file_name = os.path.normpath(f"{out_folder['data']}/{image_name}.json")
 
     print("Writing raw data to " + data_file_name)
 
@@ -296,3 +283,19 @@ def create_mask_preview(mask, settings, create_preview=True):
         image_file_name = os.path.normpath(out_image)
         print("Writing image to " + image_file_name)
         pcv.print_image(img=mask, filename=image_file_name)
+
+def _get_mask_function(mask_script_filename):
+
+    if mask_script_filename != "":  # external mask script (= mask function defined in another file)
+        mask_path, mask_file = os.path.split(mask_script_filename)
+        print("External mask file used: ", mask_script_filename)
+
+        sys.path.append(mask_path)
+        mask_script = importlib.import_module(mask_file.replace(".py", ""))
+
+        return mask_script.create_mask
+
+    else:  # default/internal mask script is used (= mask function defined in this script)
+        print("Internal mask used")
+
+        return create_mask
