@@ -26,7 +26,6 @@ import cv2
 
 # Default mask workflow. Selection of other mask scripts is possible in the UI.
 def create_mask(settings, mask_preview=True):
-
     # extract masking setting, available options are defined in the .conf file
     mask_options = settings["experimentSettings"]["analysis"]["maskOptions"]
 
@@ -60,7 +59,7 @@ def create_mask(settings, mask_preview=True):
 def execute(feedback_queue, script_name, settings, mask_file_name, preview=False):  # this is the analysis workflow
     print("Execute:", script_name, settings)
 
-    # Load parameters from the settings dict
+    # Load parameters from the settings dict TODO: Improve settings handling (using a class)
     # files and folder
     out_folder = settings["outputFolder"]
 
@@ -76,6 +75,12 @@ def execute(feedback_queue, script_name, settings, mask_file_name, preview=False
     selected_index = script_options["index_selection"]
     roi_overlay = script_options["roi_overlay"]
     line_width = script_options["line_width"]
+
+    # chart options
+    chart_options = settings["experimentSettings"]["analysis"]["chartOptions"]
+    false_color_image = chart_options["false_color_image"]
+    spectral_histogram = chart_options["spectral_histogram"]
+    index_histogram = chart_options["index_histogram"]
 
     # set plantcv variables
     pcv.params.line_thickness = int(line_width)
@@ -113,6 +118,14 @@ def execute(feedback_queue, script_name, settings, mask_file_name, preview=False
     # ANALYSES
     # analyze shape
     img_labelled = pcv.analyze.size(img=img_labelled, labeled_mask=labeled_objects, n_labels=n_obj, label="plant")
+    pseudo_rgb_file_name = os.path.normpath(f"{out_folder['images']}/{image_name}_pseudoRGB.png")
+
+    print("Writing image to " + pseudo_rgb_file_name)
+    pcv.print_image(img=img_labelled, filename=pseudo_rgb_file_name)
+    feedback_queue.put([script_name, 'preview', pseudo_rgb_file_name])
+
+    if preview:
+        return pseudo_rgb_file_name
 
     # analyze spectral reflectance
     spectral_hist = pcv.analyze.spectral_reflectance(hsi=spectral_array, labeled_mask=labeled_objects, n_labels=n_obj,
@@ -124,37 +137,29 @@ def execute(feedback_queue, script_name, settings, mask_file_name, preview=False
     index_hist = pcv.analyze.spectral_index(index_img=index_array, labeled_mask=labeled_objects, n_labels=n_obj,
                                             label="plant")
 
-    # create false color representation
-    index_false_color = pcv.visualize.pseudocolor(gray_img=index_array.array_data, mask=mask,
-                                                  background="white", axes=False,
-                                                  colorbar=False, cmap='viridis',
-                                                  min_value=index_functions[selected_index][2],
-                                                  max_value=index_functions[selected_index][3])
-
-    # return preview image and
-    pseudo_rgb_file_name = os.path.normpath(f"{out_folder['images']}/{image_name}_pseudoRGB.png")
-    spectral_hist_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_spectral_histogram.png")
-    index_hist_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_index_histogram.png")
-    index_false_color_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_index_false_color.png")
-
-    print("Writing image to " + pseudo_rgb_file_name)
-    pcv.print_image(img=img_labelled, filename=pseudo_rgb_file_name)
-
-    if preview:
-        return pseudo_rgb_file_name
-
+    # return visual results
     print("Writing visual outputs to " + out_folder['visuals'])
-    pcv.print_image(img=spectral_hist, filename=spectral_hist_file_name)
-    pcv.print_image(img=index_hist, filename=index_hist_file_name)
-    pcv.print_image(img=index_false_color, filename=index_false_color_file_name)
+    if spectral_histogram:
+        spectral_hist_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_spectral_histogram.png")
+        pcv.print_image(img=spectral_hist, filename=spectral_hist_file_name)
+        feedback_queue.put([script_name, 'spectral_hist', spectral_hist_file_name])
 
-    # Use feedbackQueue.put to send feedback to the main application
-    # feedbackQueue.put([name, 'Processing images...'])
-    print("Writing info to queue")
-    feedback_queue.put([script_name, 'preview', pseudo_rgb_file_name])
-    feedback_queue.put([script_name, 'spectral_hist', spectral_hist_file_name])
-    feedback_queue.put([script_name, 'index_hist', index_hist_file_name])
-    feedback_queue.put([script_name, 'index_false_color', index_false_color_file_name])
+    if index_histogram:
+        index_hist_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_index_histogram.png")
+        pcv.print_image(img=index_hist, filename=index_hist_file_name)
+        feedback_queue.put([script_name, 'index_hist', index_hist_file_name])
+
+    if false_color_image:
+        # create false color representation
+        index_false_color = pcv.visualize.pseudocolor(gray_img=index_array.array_data, mask=mask,
+                                                      background="white", axes=False,
+                                                      colorbar=False, cmap='viridis',
+                                                      min_value=index_functions[selected_index][2],
+                                                      max_value=index_functions[selected_index][3])
+
+        index_false_color_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_index_false_color.png")
+        pcv.print_image(img=index_false_color, filename=index_false_color_file_name)
+        feedback_queue.put([script_name, 'index_false_color', index_false_color_file_name])
 
     print("Workflow done")
 
@@ -179,7 +184,6 @@ def execute(feedback_queue, script_name, settings, mask_file_name, preview=False
 
 
 def get_display_name_for_chart(settings):
-
     # load settings
     script_options = settings["experimentSettings"]["analysis"]["scriptOptions"]["general"]
 
@@ -242,17 +246,17 @@ def process_rois(roi_items, rgb_image, roi_debug=False):  # get the rois from in
         roi_height = item["height"]
 
         if roi_type == "Circle":
-            roi_radius = int(roi_width/2)
+            roi_radius = int(roi_width / 2)
             # create a single circular ROI
             roi = pcv.roi.circle(x=roi_x, y=roi_y, r=roi_radius, img=rgb_image)
         elif roi_type == "Rectangle":
             # create a single rectangle ROI
-            print("calculated x/y", roi_x - roi_width/2, roi_y - roi_height/2)
-            roi = pcv.roi.rectangle(x=roi_x - roi_width/2, y=roi_y - roi_height/2,
+            print("calculated x/y", roi_x - roi_width / 2, roi_y - roi_height / 2)
+            roi = pcv.roi.rectangle(x=roi_x - roi_width / 2, y=roi_y - roi_height / 2,
                                     h=roi_height, w=roi_width, img=rgb_image)
         elif roi_type == "Ellipse":
-            roi_radius1 = int(roi_width/2)
-            roi_radius2 = int(roi_height/2)
+            roi_radius1 = int(roi_width / 2)
+            roi_radius2 = int(roi_height / 2)
             # create a single elliptical ROI
             roi = pcv.roi.ellipse(x=roi_x, y=roi_y, r1=roi_radius1, r2=roi_radius2, img=rgb_image, angle=0)
         elif roi_type == "Polygon":
@@ -284,8 +288,8 @@ def create_mask_preview(mask, settings, create_preview=True):
         print("Writing image to " + image_file_name)
         pcv.print_image(img=mask, filename=image_file_name)
 
-def _get_mask_function(mask_script_filename):
 
+def _get_mask_function(mask_script_filename):
     if mask_script_filename != "":  # external mask script (= mask function defined in another file)
         mask_path, mask_file = os.path.split(mask_script_filename)
         print("External mask file used: ", mask_script_filename)
