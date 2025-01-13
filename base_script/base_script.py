@@ -34,6 +34,11 @@ def create_mask(settings, mask_preview=True):
     fill_size = mask_options["fill_size"]
     dilate_pixel = mask_options["dilate_pixel"]
 
+    if mask_options["invert_mask"]:
+        mask_object = "dark"
+    else:
+        mask_object = "light"
+
     spectral_array, rvs_metadata = rayn_utils.prepare_spectral_data(settings)
 
     # get data from selected wavelength band
@@ -44,7 +49,7 @@ def create_mask(settings, mask_preview=True):
         warnings.warn("No wavelength for mask selected. Defaulting to first in list")
 
     # create binary mask from layer using an adjustable threshold
-    binary_img = pcv.threshold.binary(gray_img=selected_layer, threshold=wl_thresh)
+    binary_img = pcv.threshold.binary(gray_img=selected_layer, threshold=wl_thresh, object_type=mask_object)
     binary_img = pcv.fill(bin_img=binary_img, size=fill_size)
 
     if dilate_pixel:
@@ -75,6 +80,7 @@ def execute(feedback_queue, script_name, settings, mask_file_name, preview=False
     selected_index = script_options["index_selection"]
     roi_overlay = script_options["roi_overlay"]
     line_width = script_options["line_width"]
+    convert_pixel = script_options["convert_pixel"]
 
     # chart options
     chart_options = settings["experimentSettings"]["analysis"]["chartOptions"]
@@ -181,43 +187,6 @@ def execute(feedback_queue, script_name, settings, mask_file_name, preview=False
 
     # signal results file
     feedback_queue.put([script_name, 'results', data_file_name])
-
-
-def get_display_name_for_chart(settings):
-    # load settings
-    script_options = settings["experimentSettings"]["analysis"]["scriptOptions"]["general"]
-
-    analyze_index = script_options["analyze_index"]
-    selected_index = script_options["index_selection"]
-    analyze_shape = script_options["analyze_shape"]
-
-    plot_selection = settings["experimentSettings"]["analysis"]["chartOptions"]["plot_selection"]
-
-    title = ""
-    y_label = ""
-
-    if plot_selection == "plot_index" and analyze_index:
-        index_dict_dd = rayn_utils.get_index_functions()
-        full_index_name = index_dict_dd[selected_index][0]
-        title = full_index_name
-        y_label = "relative index value"
-
-    if plot_selection in ["area", "width", "height", "perimeter"] and analyze_shape:
-        title = f"Leaf {plot_selection}"
-        y_label = f"Leaf {plot_selection} [px]"
-
-    else:
-        if analyze_shape:
-            title = f"Leaf {plot_selection}"
-            y_label = f"Leaf {plot_selection} [px]"
-
-        if analyze_index:
-            index_dict_dd = rayn_utils.get_index_functions()
-            full_index_name = index_dict_dd[selected_index][0]
-            title = full_index_name
-            y_label = "relative index value"
-
-    return title, y_label
 
 
 def dropdown_values(setting, wavelengths):  # fills UI element with values
