@@ -23,6 +23,9 @@ import sys
 import importlib
 import cv2
 
+import matplotlib
+matplotlib.use('agg')
+
 
 # Default mask workflow. Selection of other mask scripts is possible in the UI.
 def create_mask(settings, mask_preview=True):
