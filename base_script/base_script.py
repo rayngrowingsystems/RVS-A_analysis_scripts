@@ -61,8 +61,10 @@ def create_mask(settings, mask_preview=True):
     return spectral_array, rvs_metadata, binary_img
 
 
-def execute(feedback_queue, script_name, settings, mask_file_name, preview=False):  # this is the analysis workflow
-    print("Execute:", script_name, settings)
+def execute(script_name, settings, mask_file_name, preview=False):  # this is the analysis workflow
+    print("--> Execute:", script_name, settings)
+
+    return_list = []
 
     # Load parameters from the settings dict TODO: Improve settings handling (using a class)
     # files and folder
@@ -93,7 +95,7 @@ def execute(feedback_queue, script_name, settings, mask_file_name, preview=False
     pcv.params.debug = None
 
     # ANALYSIS WORKFLOW START
-    print("Starting workflow")
+    print("--> Starting workflow")
 
     # determine mask script based on the chosen option
     create_function = _get_mask_function(mask_file_name)
@@ -107,7 +109,7 @@ def execute(feedback_queue, script_name, settings, mask_file_name, preview=False
     image_name = os.path.splitext(image_name)[0]
 
     # signal which file is processed
-    feedback_queue.put([script_name, 'Processing: ' + spectral_array.filename])
+    # feedback_queue.put([script_name, 'Processing: ' + spectral_array.filename])
 
     # copy unaltered pseudo rgb image for plotting results/debug information on it later
     img_labelled = np.copy(spectral_array.pseudo_rgb)
@@ -128,7 +130,8 @@ def execute(feedback_queue, script_name, settings, mask_file_name, preview=False
 
     print("Writing image to " + pseudo_rgb_file_name)
     pcv.print_image(img=img_labelled, filename=pseudo_rgb_file_name)
-    feedback_queue.put([script_name, 'preview', pseudo_rgb_file_name])
+    # feedback_queue.put([script_name, 'preview', pseudo_rgb_file_name])
+    return_list.append(("preview", pseudo_rgb_file_name,))
 
     if preview:
         return pseudo_rgb_file_name
@@ -148,12 +151,14 @@ def execute(feedback_queue, script_name, settings, mask_file_name, preview=False
     if spectral_histogram:
         spectral_hist_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_spectral_histogram.png")
         pcv.print_image(img=spectral_hist, filename=spectral_hist_file_name)
-        feedback_queue.put([script_name, 'spectral_hist', spectral_hist_file_name])
+        return_list.append(("spectral_hist", spectral_hist_file_name,))
+        # feedback_queue.put([script_name, 'spectral_hist', spectral_hist_file_name])
 
     if index_histogram:
         index_hist_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_index_histogram.png")
         pcv.print_image(img=index_hist, filename=index_hist_file_name)
-        feedback_queue.put([script_name, 'index_hist', index_hist_file_name])
+        return_list.append(("index_hist", index_hist_file_name,))
+        # feedback_queue.put([script_name, 'index_hist', index_hist_file_name])
 
     if false_color_image:
         # create false color representation
@@ -165,9 +170,10 @@ def execute(feedback_queue, script_name, settings, mask_file_name, preview=False
 
         index_false_color_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_index_false_color.png")
         pcv.print_image(img=index_false_color, filename=index_false_color_file_name)
-        feedback_queue.put([script_name, 'index_false_color', index_false_color_file_name])
+        return_list.append(("index_false_color", index_false_color_file_name,))
+        # feedback_queue.put([script_name, 'index_false_color', index_false_color_file_name])
 
-    print("Workflow done")
+    print("--> Workflow done")
 
     # ANALYSIS WORKFLOW END
 
@@ -180,14 +186,16 @@ def execute(feedback_queue, script_name, settings, mask_file_name, preview=False
 
     data_file_name = os.path.normpath(f"{out_folder['data']}/{image_name}.json")
 
-    print("Writing raw data to " + data_file_name)
+    print("--> Writing raw data to " + data_file_name)
 
     pcv.outputs.save_results(data_file_name, outformat="json")
     pcv.outputs.clear()
 
     # signal results file
-    feedback_queue.put([script_name, 'results', data_file_name])
+    return_list.append(("results", data_file_name,))
+    # feedback_queue.put([script_name, 'results', data_file_name])
 
+    return return_list
 
 def dropdown_values(setting, wavelengths):  # fills UI element with values
     if setting == "index_list":  # selects the respective UI element
