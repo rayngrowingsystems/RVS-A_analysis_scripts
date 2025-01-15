@@ -161,7 +161,7 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
         index_hist_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_index_histogram.png")
         pcv.print_image(img=index_hist, filename=index_hist_file_name)
         return_list.append(("index_hist", index_hist_file_name,))
-        index_hist.save(index_hist_file_name.replace(".png", ".html"))
+        index_hist.save(index_hist_file_name.replace(".png", ".html"), inline=True)
         # feedback_queue.put([script_name, 'index_hist', index_hist_file_name])
 
     if false_color_image:
