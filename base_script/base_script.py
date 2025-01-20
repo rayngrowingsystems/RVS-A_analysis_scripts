@@ -23,6 +23,8 @@ import sys
 import importlib
 import cv2
 
+import vl_convert as vlc
+
 import matplotlib
 matplotlib.use('agg')
 
@@ -154,7 +156,11 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
     if spectral_histogram:
         spectral_hist_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_spectral_histogram.png")
         # pcv.print_image(img=spectral_hist, filename=spectral_hist_file_name)
-        spectral_hist.save(spectral_hist_file_name, engine="vl-convert")
+        chart_dict = spectral_hist.to_dict()
+        png_data = vlc.vegalite_to_png(chart_dict, scale=2)
+        with open(spectral_hist_file_name, "wb") as f:
+            f.write(png_data)
+
         return_list.append(("spectral_hist", spectral_hist_file_name,))
 
     if index_histogram:
