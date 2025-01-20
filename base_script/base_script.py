@@ -155,9 +155,9 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
     print("Writing visual outputs to " + out_folder['visuals'])
     if spectral_histogram:
         spectral_hist_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_spectral_histogram.png")
-        # pcv.print_image(img=spectral_hist, filename=spectral_hist_file_name)
         chart_dict = spectral_hist.to_dict()
-        png_data = vlc.vegalite_to_png(chart_dict, scale=2)
+        chart_dict["spec"]["mark"]["point"] = True
+        png_data = vlc.vegalite_to_png(chart_dict, scale=1.5)
         with open(spectral_hist_file_name, "wb") as f:
             f.write(png_data)
 
@@ -165,7 +165,11 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
 
     if index_histogram:
         index_hist_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_index_histogram.png")
-        pcv.print_image(img=index_hist, filename=index_hist_file_name)
+        chart_dict = index_hist.to_dict()
+        png_data = vlc.vegalite_to_png(chart_dict, scale=1.5)
+        with open(index_hist_file_name, "wb") as f:
+            f.write(png_data)
+
         return_list.append(("index_hist", index_hist_file_name,))
 
     if false_color_image:
