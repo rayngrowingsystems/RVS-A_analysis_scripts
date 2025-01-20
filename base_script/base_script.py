@@ -153,15 +153,14 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
     print("Writing visual outputs to " + out_folder['visuals'])
     if spectral_histogram:
         spectral_hist_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_spectral_histogram.png")
-        pcv.print_image(img=spectral_hist, filename=spectral_hist_file_name)
+        # pcv.print_image(img=spectral_hist, filename=spectral_hist_file_name)
+        spectral_hist.save(spectral_hist_file_name, engine="vl-convert")
         return_list.append(("spectral_hist", spectral_hist_file_name,))
-        # feedback_queue.put([script_name, 'spectral_hist', spectral_hist_file_name])
 
     if index_histogram:
         index_hist_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_index_histogram.png")
         pcv.print_image(img=index_hist, filename=index_hist_file_name)
         return_list.append(("index_hist", index_hist_file_name,))
-        # feedback_queue.put([script_name, 'index_hist', index_hist_file_name])
 
     if false_color_image:
         # create false color representation
@@ -174,7 +173,6 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
         index_false_color_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_index_false_color.png")
         pcv.print_image(img=index_false_color, filename=index_false_color_file_name)
         return_list.append(("index_false_color", index_false_color_file_name,))
-        # feedback_queue.put([script_name, 'index_false_color', index_false_color_file_name])
 
     print("--> Workflow done")
 
