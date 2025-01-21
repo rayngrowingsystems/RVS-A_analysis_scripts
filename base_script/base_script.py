@@ -135,7 +135,6 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
 
     print("Writing image to " + pseudo_rgb_file_name)
     pcv.print_image(img=img_labelled, filename=pseudo_rgb_file_name)
-    # feedback_queue.put([script_name, 'preview', pseudo_rgb_file_name])
     return_list.append(("preview", pseudo_rgb_file_name,))
 
     if preview:
@@ -147,7 +146,9 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
 
     # analyze reflectance index
     index_functions = rayn_utils.get_index_functions()  # load all available index functions
-    index_array = index_functions[selected_index][1](spectral_array, 10)  # call the function of the selected index
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        index_array = index_functions[selected_index][1](spectral_array, 10)  # call the function of the selected index
     index_hist = pcv.analyze.spectral_index(index_img=index_array, labeled_mask=labeled_objects, n_labels=n_obj,
                                             label="plant")
 
