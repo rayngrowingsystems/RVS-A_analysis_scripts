@@ -38,11 +38,7 @@ def create_mask(settings, mask_preview=True):
     wl_thresh = mask_options["wl_thresh"]
     fill_size = mask_options["fill_size"]
     dilate_pixel = mask_options["dilate_pixel"]
-
-    if mask_options["invert_mask"]:
-        mask_object = "dark"
-    else:
-        mask_object = "light"
+    invert_mask = mask_options["invert_mask"]
 
     spectral_array, rvs_metadata = rayn_utils.prepare_spectral_data(settings)
 
@@ -54,11 +50,14 @@ def create_mask(settings, mask_preview=True):
         warnings.warn("No wavelength for mask selected. Defaulting to first in list")
 
     # create binary mask from layer using an adjustable threshold
-    binary_img = pcv.threshold.binary(gray_img=selected_layer, threshold=wl_thresh, object_type=mask_object)
+    binary_img = pcv.threshold.binary(gray_img=selected_layer, threshold=wl_thresh)
     binary_img = pcv.fill(bin_img=binary_img, size=fill_size)
 
     if dilate_pixel:
         binary_img = pcv.dilate(gray_img=binary_img, ksize=2, i=2)
+
+    if invert_mask:
+        binary_img = pcv.invert(binary_img)
 
     # creates mask preview image
     create_mask_preview(binary_img, settings, mask_preview)
