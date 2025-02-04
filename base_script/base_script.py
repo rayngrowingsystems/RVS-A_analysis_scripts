@@ -86,7 +86,7 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
     selected_index = script_options["index_selection"]
     roi_overlay = script_options["roi_overlay"]
     line_width = script_options["line_width"]
-    convert_pixel = script_options["convert_pixel"]
+    #convert_pixel = script_options["convert_pixel"]
 
     # chart options
     chart_options = settings["experimentSettings"]["analysis"]["chartOptions"]
@@ -193,6 +193,7 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
     pcv.outputs.add_metadata("firmware", str, rvs_metadata["firmware version"])
     pcv.outputs.add_metadata("timestamp", datetime.datetime,
                              f"{rvs_metadata['capture date']} {rvs_metadata['capture time']}")
+    pcv.outputs.add_metadata("filename", str, image_name)
     pcv.outputs.add_metadata("pixel_to_mm_factor", datetime.date, rvs_metadata["px to mm ratio"])
 
     data_file_name = os.path.normpath(f"{out_folder['data']}/{image_name}.json")
