@@ -15,6 +15,7 @@
 import os
 import numpy as np
 import warnings
+import datetime
 
 from plantcv import plantcv as pcv
 import rayn_utils
@@ -22,10 +23,14 @@ import sys
 import importlib
 import cv2
 
+import vl_convert as vlc
+
+import matplotlib
+matplotlib.use('agg')
+
 
 # Default mask workflow. Selection of other mask scripts is possible in the UI.
 def create_mask(settings, mask_preview=True):
-
     # extract masking setting, available options are defined in the .conf file
     mask_options = settings["experimentSettings"]["analysis"]["maskOptions"]
 
@@ -33,8 +38,9 @@ def create_mask(settings, mask_preview=True):
     wl_thresh = mask_options["wl_thresh"]
     fill_size = mask_options["fill_size"]
     dilate_pixel = mask_options["dilate_pixel"]
+    invert_mask = mask_options["invert_mask"]
 
-    spectral_array = rayn_utils.prepare_spectral_data(settings)
+    spectral_array, rvs_metadata = rayn_utils.prepare_spectral_data(settings)
 
     # get data from selected wavelength band
     if (selected_wl != "None") and (selected_wl != ""):
@@ -50,16 +56,21 @@ def create_mask(settings, mask_preview=True):
     if dilate_pixel:
         binary_img = pcv.dilate(gray_img=binary_img, ksize=2, i=2)
 
+    if invert_mask:
+        binary_img = pcv.invert(binary_img)
+
     # creates mask preview image
     create_mask_preview(binary_img, settings, mask_preview)
 
-    return spectral_array, binary_img
+    return spectral_array, rvs_metadata, binary_img
 
 
-def execute(feedback_queue, script_name, settings, mask_file_name):  # this is the analysis workflow
-    print("Execute:", script_name, settings)
+def execute(script_name, settings, mask_file_name, preview=False):  # this is the analysis workflow
+    print("--> Execute:", script_name, settings)
 
-    # Load parameters from the settings dict
+    return_list = []
+
+    # Load parameters from the settings dict TODO: Improve settings handling (using a class)
     # files and folder
     out_folder = settings["outputFolder"]
 
@@ -72,46 +83,37 @@ def execute(feedback_queue, script_name, settings, mask_file_name):  # this is t
     # script specific settings (options are defined in the .config file)
     script_options = settings["experimentSettings"]["analysis"]["scriptOptions"]["general"]
 
-    analyze_index = script_options["analyze_index"]
     selected_index = script_options["index_selection"]
-    analyze_shape = script_options["analyze_shape"]
     roi_overlay = script_options["roi_overlay"]
     line_width = script_options["line_width"]
+    #convert_pixel = script_options["convert_pixel"]
 
-    # script specific settings for charting (options are defined in the .config file)
-    plot_selection = settings["experimentSettings"]["analysis"]["chartOptions"]["plot_selection"]
+    # chart options
+    chart_options = settings["experimentSettings"]["analysis"]["chartOptions"]
+    false_color_image = chart_options["false_color_image"]
+    spectral_histogram = chart_options["spectral_histogram"]
+    index_histogram = chart_options["index_histogram"]
 
     # set plantcv variables
     pcv.params.line_thickness = int(line_width)
     pcv.params.debug = None
 
-    # determine mask script based on the chosen option
-    if mask_file_name != "":  # external mask script (= mask function defined in another file)
-        mask_path, mask_file = os.path.split(mask_file_name)
-        print("External mask file used: ", mask_file_name)
-
-        sys.path.append(mask_path)
-        mask_script = importlib.import_module(mask_file.replace(".py", ""))
-        create_function = mask_script.create_mask
-
-    else:  # default/internal mask script is used (= mask function defined in this script)
-        print("Internal mask used")
-        
-        create_function = create_mask
-
     # ANALYSIS WORKFLOW START
-    print("Starting workflow")
+    print("--> Starting workflow")
 
-    # retrieving preprocessed data cube and mask from another script
-    spectral_array, mask = create_function(settings, mask_preview=False)
+    # determine mask script based on the chosen option
+    create_function = _get_mask_function(mask_file_name)
+
+    # retrieving preprocessed data cube, meta data and mask
+    spectral_array, rvs_metadata, mask = create_function(settings, mask_preview=False)
 
     # extract image name
-    filename = spectral_array.filename
+    filename = spectral_array.filename  # TODO move this to rvs_metadata
     image_name = os.path.split(filename)[-1]
     image_name = os.path.splitext(image_name)[0]
 
     # signal which file is processed
-    feedback_queue.put([script_name, 'Processing: ' + spectral_array.filename])
+    # feedback_queue.put([script_name, 'Processing: ' + spectral_array.filename])
 
     # copy unaltered pseudo rgb image for plotting results/debug information on it later
     img_labelled = np.copy(spectral_array.pseudo_rgb)
@@ -125,140 +127,87 @@ def execute(feedback_queue, script_name, settings, mask_file_name):  # this is t
     else:  # if no ROIs are set, no ROI filter is applied
         labeled_objects, n_obj = pcv.create_labels(mask=mask, rois=None)
 
-    # analyzing objects
-    if analyze_index:
-        index_functions = rayn_utils.get_index_functions()
-        index_array = index_functions[selected_index][1](spectral_array, 10)
-        pcv.analyze.spectral_index(index_img=index_array,
-                                   labeled_mask=labeled_objects,
-                                   n_labels=n_obj,
-                                   label="plant")
+    # ANALYSES
+    # analyze shape
+    img_labelled = pcv.analyze.size(img=img_labelled, labeled_mask=labeled_objects, n_labels=n_obj, label="plant")
+    pseudo_rgb_file_name = os.path.normpath(f"{out_folder['images']}/{image_name}_pseudoRGB.png")
 
-    if analyze_shape:
-        img_labelled = pcv.analyze.size(img=img_labelled,
-                                        labeled_mask=labeled_objects,
-                                        n_labels=n_obj,
-                                        label="plant")
+    print("Writing image to " + pseudo_rgb_file_name)
+    pcv.print_image(img=img_labelled, filename=pseudo_rgb_file_name)
+    return_list.append(("preview", pseudo_rgb_file_name,))
 
-    # return preview image
-    image_file_name = os.path.normpath(out_folder + "/ProcessedImages/" + image_name + ".png")
-    path, file_name = os.path.split(image_file_name)
+    if preview:
+        return pseudo_rgb_file_name
 
-    if not os.path.exists(path):
-        os.makedirs(path)
-        print("Created folder " + path)
+    # analyze spectral reflectance
+    spectral_hist = pcv.analyze.spectral_reflectance(hsi=spectral_array, labeled_mask=labeled_objects, n_labels=n_obj,
+                                                     label="plant")
 
-    print("Writing image to " + image_file_name)
+    # analyze reflectance index
+    index_functions = rayn_utils.get_index_functions()  # load all available index functions
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        index_array = index_functions[selected_index][1](spectral_array, 10)  # call the function of the selected index
+    index_hist = pcv.analyze.spectral_index(index_img=index_array, labeled_mask=labeled_objects, n_labels=n_obj,
+                                            label="plant")
 
-    pcv.print_image(img=img_labelled, filename=image_file_name)
+    # return visual results
+    print("Writing visual outputs to " + out_folder['visuals'])
+    if spectral_histogram:
+        spectral_hist_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_spectral_histogram.png")
+        chart_dict = spectral_hist.to_dict()
+        chart_dict["spec"]["mark"]["point"] = True
+        png_data = vlc.vegalite_to_png(chart_dict, scale=1.5)
+        with open(spectral_hist_file_name, "wb") as f:
+            f.write(png_data)
 
-    # Use feedbackQueue.put to send feedback to the main application
-    # feedbackQueue.put([name, 'Processing images...'])
-    print("Writing info to queue")
-    feedback_queue.put([script_name, 'preview', image_file_name])
+        return_list.append(("spectral_hist", spectral_hist_file_name,))
 
-    print("Workflow done")
+    if index_histogram:
+        index_hist_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_index_histogram.png")
+        chart_dict = index_hist.to_dict()
+        png_data = vlc.vegalite_to_png(chart_dict, scale=1.5)
+        with open(index_hist_file_name, "wb") as f:
+            f.write(png_data)
+
+        return_list.append(("index_hist", index_hist_file_name,))
+
+    if false_color_image:
+        # create false color representation
+        index_false_color = pcv.visualize.pseudocolor(gray_img=index_array.array_data, mask=mask,
+                                                      background="white", axes=False,
+                                                      colorbar=False, cmap='viridis',
+                                                      min_value=index_functions[selected_index][2],
+                                                      max_value=index_functions[selected_index][3])
+
+        index_false_color_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_index_false_color.png")
+        pcv.print_image(img=index_false_color, filename=index_false_color_file_name)
+        return_list.append(("index_false_color", index_false_color_file_name,))
+
+    print("--> Workflow done")
 
     # ANALYSIS WORKFLOW END
-    # TODO: change how results are saved when the new PlantCV Version is published
 
-    # Processing results
-    results = pcv.outputs.observations
-    # TODO: this is currently very limited and inflexible. Needs to change!
-    results_dict = {}
-    results_list = []
+    # adding meta data to outputs
+    pcv.outputs.add_metadata("camera", str, rvs_metadata["camera"])
+    pcv.outputs.add_metadata("firmware", str, rvs_metadata["firmware version"])
+    pcv.outputs.add_metadata("timestamp", datetime.datetime,
+                             f"{rvs_metadata['capture date']} {rvs_metadata['capture time']}")
+    pcv.outputs.add_metadata("filename", str, image_name)
+    pcv.outputs.add_metadata("pixel_to_mm_factor", datetime.date, rvs_metadata["px to mm ratio"])
 
-    index_key = "index_" + selected_index
+    data_file_name = os.path.normpath(f"{out_folder['data']}/{image_name}.json")
 
-    if plot_selection == "plot_index" and analyze_index:
-        selected_key = "mean_" + index_key
-    else:
-        selected_key = plot_selection
+    print("--> Writing raw data to " + data_file_name)
 
-    for i in range(1, n_obj + 1):
+    pcv.outputs.save_results(data_file_name, outformat="json")
+    pcv.outputs.clear()
 
-        if f"plant_{i}" in results:
-            roi_results = results[f"plant_{i}"]
+    # signal results file
+    return_list.append(("results", data_file_name,))
+    # feedback_queue.put([script_name, 'results', data_file_name])
 
-            if analyze_shape and not analyze_index:
-                results_list.append({"roi": i,
-                                     "area": roi_results["area"]["value"],
-                                     "width": roi_results["width"]["value"],
-                                     "height": roi_results["height"]["value"],
-                                     "perimeter": roi_results["perimeter"]["value"],
-                                     "index": None,
-                                     "mean": None,
-                                     "median": None,
-                                     "std": None,
-                                     "plot_value": roi_results[selected_key]["value"]})
-
-            if analyze_index and not analyze_shape:
-                results_list.append({"roi": i,
-                                     "area": None,
-                                     "width": None,
-                                     "height": None,
-                                     "perimeter": None,
-                                     "index": selected_index,
-                                     "mean": roi_results["mean_" + index_key]["value"],
-                                     "median": roi_results["med_" + index_key]["value"],
-                                     "std": roi_results["std_" + index_key]["value"],
-                                     "plot_value": roi_results[selected_key]["value"]})
-
-            if analyze_shape and analyze_index:
-                results_list.append({"roi": i,
-                                     "area": roi_results["area"]["value"],
-                                     "width": roi_results["width"]["value"],
-                                     "height": roi_results["height"]["value"],
-                                     "perimeter": roi_results["perimeter"]["value"],
-                                     "index": selected_index,
-                                     "mean": roi_results["mean_" + index_key]["value"],
-                                     "median": roi_results["med_" + index_key]["value"],
-                                     "std": roi_results["std_" + index_key]["value"],
-                                     "plot_value": roi_results[selected_key]["value"]})
-
-    results_dict["rois"] = results_list
-
-    # signal results
-    signal_dict = {"imageFileName": image_file_name, "dict": results_dict}
-    feedback_queue.put([script_name, 'results', signal_dict])
-
-
-def get_display_name_for_chart(settings):
-
-    # load settings
-    script_options = settings["experimentSettings"]["analysis"]["scriptOptions"]["general"]
-
-    analyze_index = script_options["analyze_index"]
-    selected_index = script_options["index_selection"]
-    analyze_shape = script_options["analyze_shape"]
-
-    plot_selection = settings["experimentSettings"]["analysis"]["chartOptions"]["plot_selection"]
-
-    title = ""
-    y_label = ""
-
-    if plot_selection == "plot_index" and analyze_index:
-        index_dict_dd = rayn_utils.get_index_functions()
-        full_index_name = index_dict_dd[selected_index][0]
-        title = full_index_name
-        y_label = "relative index value"
-
-    if plot_selection in ["area", "width", "height", "perimeter"] and analyze_shape:
-        title = f"Leaf {plot_selection}"
-        y_label = f"Leaf {plot_selection} [px]"
-
-    else:
-        if analyze_shape:
-            title = f"Leaf {plot_selection}"
-            y_label = f"Leaf {plot_selection} [px]"
-
-        if analyze_index:
-            index_dict_dd = rayn_utils.get_index_functions()
-            full_index_name = index_dict_dd[selected_index][0]
-            title = full_index_name
-            y_label = "relative index value"
-
-    return title, y_label
+    return return_list
 
 
 def dropdown_values(setting, wavelengths):  # fills UI element with values
@@ -287,17 +236,17 @@ def process_rois(roi_items, rgb_image, roi_debug=False):  # get the rois from in
         roi_height = item["height"]
 
         if roi_type == "Circle":
-            roi_radius = int(roi_width/2)
+            roi_radius = int(roi_width / 2)
             # create a single circular ROI
             roi = pcv.roi.circle(x=roi_x, y=roi_y, r=roi_radius, img=rgb_image)
         elif roi_type == "Rectangle":
             # create a single rectangle ROI
-            print("calculated x/y", roi_x - roi_width/2, roi_y - roi_height/2)
-            roi = pcv.roi.rectangle(x=roi_x - roi_width/2, y=roi_y - roi_height/2,
+            print("calculated x/y", roi_x - roi_width / 2, roi_y - roi_height / 2)
+            roi = pcv.roi.rectangle(x=roi_x - roi_width / 2, y=roi_y - roi_height / 2,
                                     h=roi_height, w=roi_width, img=rgb_image)
         elif roi_type == "Ellipse":
-            roi_radius1 = int(roi_width/2)
-            roi_radius2 = int(roi_height/2)
+            roi_radius1 = int(roi_width / 2)
+            roi_radius2 = int(roi_height / 2)
             # create a single elliptical ROI
             roi = pcv.roi.ellipse(x=roi_x, y=roi_y, r1=roi_radius1, r2=roi_radius2, img=rgb_image, angle=0)
         elif roi_type == "Polygon":
@@ -328,3 +277,19 @@ def create_mask_preview(mask, settings, create_preview=True):
         image_file_name = os.path.normpath(out_image)
         print("Writing image to " + image_file_name)
         pcv.print_image(img=mask, filename=image_file_name)
+
+
+def _get_mask_function(mask_script_filename):
+    if mask_script_filename != "":  # external mask script (= mask function defined in another file)
+        mask_path, mask_file = os.path.split(mask_script_filename)
+        print("External mask file used: ", mask_script_filename)
+
+        sys.path.append(mask_path)
+        mask_script = importlib.import_module(mask_file.replace(".py", ""))
+
+        return mask_script.create_mask
+
+    else:  # default/internal mask script is used (= mask function defined in this script)
+        print("Internal mask used")
+
+        return create_mask
