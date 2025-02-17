@@ -209,6 +209,7 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
 
     return return_list
 
+
 def dropdown_values(setting, wavelengths):  # fills UI element with values
     if setting == "index_list":  # selects the respective UI element
         index_dict_dd = rayn_utils.get_index_functions()
