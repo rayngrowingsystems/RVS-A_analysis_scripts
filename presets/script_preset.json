@@ -1,0 +1,30 @@
+{
+	"settings":
+	[
+		{
+			"displayName": "Select Index for Analysis",
+			"name": "index_selection",
+			"hint": "Index is only calculated if 'Analyze Index' is selected",
+			"type": "dropdown",
+			"getValuesFor": "index_list",
+			"value": "0"
+		},
+		{
+			"displayName": "ROI Overlay",
+			"name": "roi_overlay",
+			"hint": "Create an ROI overlay in the preview images",
+			"type": "checkBox",
+			"value": "false"
+		},
+		{
+			"displayName": "Line width",
+			"name": "line_width",
+			"hint": "Set the size of lines marking the plant shapes",
+			"type": "slider",
+			"value": "2",
+			"minimum": "1",
+			"maximum": "5",
+			"steps": "5"
+		}
+	]
+}
