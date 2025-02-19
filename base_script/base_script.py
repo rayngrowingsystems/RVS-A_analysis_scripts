@@ -84,15 +84,14 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
     script_options = settings["experimentSettings"]["analysis"]["scriptOptions"]["general"]
 
     selected_index = script_options["index_selection"]
+
     roi_overlay = script_options["roi_overlay"]
     line_width = script_options["line_width"]
     #convert_pixel = script_options["convert_pixel"]
 
-    # chart options
-    chart_options = settings["experimentSettings"]["analysis"]["chartOptions"]
-    false_color_image = chart_options["false_color_image"]
-    spectral_histogram = chart_options["spectral_histogram"]
-    index_histogram = chart_options["index_histogram"]
+    false_color_image = script_options["false_color_image"]
+    spectral_histogram = script_options["spectral_histogram"]
+    index_histogram = script_options["index_histogram"]
 
     # set plantcv variables
     pcv.params.line_thickness = int(line_width)
@@ -111,9 +110,6 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
     filename = spectral_array.filename  # TODO move this to rvs_metadata
     image_name = os.path.split(filename)[-1]
     image_name = os.path.splitext(image_name)[0]
-
-    # signal which file is processed
-    # feedback_queue.put([script_name, 'Processing: ' + spectral_array.filename])
 
     # copy unaltered pseudo rgb image for plotting results/debug information on it later
     img_labelled = np.copy(spectral_array.pseudo_rgb)
@@ -145,11 +141,16 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
 
     # analyze reflectance index
     index_functions = rayn_utils.get_index_functions()  # load all available index functions
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        index_array = index_functions[selected_index][1](spectral_array, 10)  # call the function of the selected index
-    index_hist = pcv.analyze.spectral_index(index_img=index_array, labeled_mask=labeled_objects, n_labels=n_obj,
-                                            label="plant")
+
+    index_results = {}
+    if selected_index:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            for index in selected_index:
+                index_array = index_functions[index][1](spectral_array, 10)  # call the function of the selected index
+                index_hist = pcv.analyze.spectral_index(index_img=index_array, labeled_mask=labeled_objects,
+                                                        n_labels=n_obj, label="plant")
+                index_results[index] = (index_array, index_hist)
 
     # return visual results
     print("Writing visual outputs to " + out_folder['visuals'])
@@ -164,25 +165,30 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
         return_list.append(("spectral_hist", spectral_hist_file_name,))
 
     if index_histogram:
-        index_hist_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_index_histogram.png")
-        chart_dict = index_hist.to_dict()
-        png_data = vlc.vegalite_to_png(chart_dict, scale=1.5)
-        with open(index_hist_file_name, "wb") as f:
-            f.write(png_data)
+        for index, results_data in index_results.items():
+            index_hist_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_{index}_histogram.png")
+            chart_dict = results_data[1].to_dict()
+            png_data = vlc.vegalite_to_png(chart_dict, scale=1.5)
+            with open(index_hist_file_name, "wb") as f:
+                f.write(png_data)
 
-        return_list.append(("index_hist", index_hist_file_name,))
+            return_list.append((f"index_hist_{index}", index_hist_file_name,))
 
     if false_color_image:
         # create false color representation
-        index_false_color = pcv.visualize.pseudocolor(gray_img=index_array.array_data, mask=mask,
-                                                      background="white", axes=False,
-                                                      colorbar=False, cmap='viridis',
-                                                      min_value=index_functions[selected_index][2],
-                                                      max_value=index_functions[selected_index][3])
+        for index, results_data in index_results.items():
+            print(labeled_objects.shape, labeled_objects.min(), labeled_objects.max())
+            object_mask = np.where(labeled_objects > 0, 1, 0)
+            masked_array = np.ma.array(results_data[0].array_data, mask=(object_mask > 0))
+            index_false_color = pcv.visualize.pseudocolor(gray_img=results_data[0].array_data, mask=object_mask,
+                                                          background="white", axes=False,
+                                                          colorbar=True, cmap='viridis',
+                                                          min_value=masked_array.min(),
+                                                          max_value=masked_array.max())
 
-        index_false_color_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_index_false_color.png")
-        pcv.print_image(img=index_false_color, filename=index_false_color_file_name)
-        return_list.append(("index_false_color", index_false_color_file_name,))
+            index_false_color_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_{index}_false_color.png")
+            pcv.print_image(img=index_false_color, filename=index_false_color_file_name)
+            return_list.append((f"index_false_color_{index}", index_false_color_file_name,))
 
     print("--> Workflow done")
 
