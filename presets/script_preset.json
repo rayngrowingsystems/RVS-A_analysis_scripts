@@ -5,7 +5,7 @@
 			"displayName": "Select Index for Analysis",
 			"name": "index_selection",
 			"hint": "Index is only calculated if 'Analyze Index' is selected",
-			"type": "dropdown",
+			"type": "dropdownMultiSelect",
 			"getValuesFor": "index_list",
 			"value": "0"
 		},
