@@ -39,6 +39,7 @@ def create_mask(settings, mask_preview=True):
     fill_size = mask_options["fill_size"]
     dilate_pixel = mask_options["dilate_pixel"]
     invert_mask = mask_options["invert_mask"]
+    overlay_mask = mask_options["overlay_mask"]
 
     spectral_array, rvs_metadata = rayn_utils.prepare_spectral_data(settings)
 
@@ -60,7 +61,7 @@ def create_mask(settings, mask_preview=True):
         binary_img = pcv.invert(binary_img)
 
     # creates mask preview image
-    create_mask_preview(binary_img, settings, mask_preview)
+    rayn_utils.create_mask_preview(binary_img, spectral_array.pseudo_rgb, settings, mask_preview, overlay_mask)
 
     return spectral_array, rvs_metadata, binary_img
 
@@ -177,14 +178,15 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
     if false_color_image:
         # create false color representation
         for index, results_data in index_results.items():
-            print(labeled_objects.shape, labeled_objects.min(), labeled_objects.max())
             object_mask = np.where(labeled_objects > 0, 1, 0)
-            masked_array = np.ma.array(results_data[0].array_data, mask=(object_mask > 0))
+            # masked_array = np.ma.array(results_data[0].array_data, mask=(object_mask > 0))
+            # masked_array = np.ma.masked_invalid(masked_array)
+
             index_false_color = pcv.visualize.pseudocolor(gray_img=results_data[0].array_data, mask=object_mask,
                                                           background="white", axes=False,
                                                           colorbar=True, cmap='viridis',
-                                                          min_value=masked_array.min(),
-                                                          max_value=masked_array.max())
+                                                          min_value=index_functions[index][2],
+                                                          max_value=index_functions[index][3])
 
             index_false_color_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_{index}_false_color.png")
             pcv.print_image(img=index_false_color, filename=index_false_color_file_name)
@@ -275,14 +277,6 @@ def draw_roi_overlay(img, roi_contour):
 
     for i, cnt in enumerate(roi_contour):
         cv2.drawContours(img, cnt.contours[0], -1, color, pcv.params.line_thickness)
-
-
-def create_mask_preview(mask, settings, create_preview=True):
-    if create_preview:
-        out_image = settings["outputImage"]
-        image_file_name = os.path.normpath(out_image)
-        print("Writing image to " + image_file_name)
-        pcv.print_image(img=mask, filename=image_file_name)
 
 
 def _get_mask_function(mask_script_filename):
