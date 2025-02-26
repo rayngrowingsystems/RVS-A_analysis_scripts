@@ -34,34 +34,27 @@ def create_mask(settings, mask_preview=True):
     # extract masking setting, available options are defined in the .conf file
     mask_options = settings["experimentSettings"]["analysis"]["maskOptions"]
 
-    selected_wl = mask_options["wavelength"]
-    wl_thresh = mask_options["wl_thresh"]
-    fill_size = mask_options["fill_size"]
-    dilate_pixel = mask_options["dilate_pixel"]
-    invert_mask = mask_options["invert_mask"]
-    overlay_mask = mask_options["overlay_mask"]
-
-    spectral_array, rvs_metadata = rayn_utils.prepare_spectral_data(settings)
+    spectral_array, rvs_metadata = rayn_utils.prepare_spectral_data(settings, preview=mask_preview)
 
     # get data from selected wavelength band
-    if (selected_wl != "None") and (selected_wl != ""):
-        selected_layer = spectral_array.array_data[:, :, int(spectral_array.wavelength_dict[int(selected_wl)])]
+    if (mask_options["wavelength"] != "None") and (mask_options["wavelength"] != ""):
+        selected_layer = spectral_array.array_data[:, :, int(spectral_array.wavelength_dict[int(mask_options["wavelength"])])]
     else:
         selected_layer = spectral_array.array_data[:, :, 0]
         warnings.warn("No wavelength for mask selected. Defaulting to first in list")
 
     # create binary mask from layer using an adjustable threshold
-    binary_img = pcv.threshold.binary(gray_img=selected_layer, threshold=wl_thresh)
-    binary_img = pcv.fill(bin_img=binary_img, size=fill_size)
+    binary_img = pcv.threshold.binary(gray_img=selected_layer, threshold=mask_options["wl_thresh"])
+    binary_img = pcv.fill(bin_img=binary_img, size=mask_options["fill_size"])
 
-    if dilate_pixel:
+    if mask_options["dilate_pixel"]:
         binary_img = pcv.dilate(gray_img=binary_img, ksize=2, i=2)
 
-    if invert_mask:
+    if mask_options["invert_mask"]:
         binary_img = pcv.invert(binary_img)
 
     # creates mask preview image
-    rayn_utils.create_mask_preview(binary_img, spectral_array.pseudo_rgb, settings, mask_preview, overlay_mask)
+    rayn_utils.create_mask_preview(binary_img, spectral_array.pseudo_rgb, settings, mask_preview)
 
     return spectral_array, rvs_metadata, binary_img
 
