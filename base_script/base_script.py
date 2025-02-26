@@ -74,6 +74,9 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
     roi_mode_types = ["partial", "cutto", "largest"]  # types available for plantcv.roi.filter
     roi_mode = roi_mode_types[roi_mode_selection]
 
+    # Crop rectangle
+    crop_rectangle = settings["experimentSettings"]["cropRect"]
+
     # script specific settings (options are defined in the .config file)
     script_options = settings["experimentSettings"]["analysis"]["scriptOptions"]["general"]
 
@@ -110,7 +113,7 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
 
     if roi_items:  # only if ROIs are set
         # process ROI items forwarded from the UI
-        rois = process_rois(roi_items, img_labelled, roi_debug=roi_overlay)
+        rois = process_rois(roi_items, img_labelled, crop_rectangle, roi_debug=roi_overlay)
         # identify objects in the ROIs
         labeled_objects, n_obj = pcv.create_labels(mask=mask, rois=rois, roi_type=roi_mode)
 
@@ -223,7 +226,7 @@ def dropdown_values(setting, wavelengths):  # fills UI element with values
         return
 
 
-def process_rois(roi_items, rgb_image, roi_debug=False):  # get the rois from individual coordinates
+def process_rois(roi_items, rgb_image, crop_rectangle, roi_debug=False):  # get the rois from individual coordinates
     # creating empty ROI object
     rois = pcv.Objects(contours=[], hierarchy=[])
 
@@ -231,8 +234,8 @@ def process_rois(roi_items, rgb_image, roi_debug=False):  # get the rois from in
         print("RoiItem:", item)
 
         roi_type = item["type"]
-        roi_x = item["x"]
-        roi_y = item["y"]
+        roi_x = item["x"] - crop_rectangle[0]
+        roi_y = item["y"] - crop_rectangle[1]
         roi_width = item["width"]
         roi_height = item["height"]
 
