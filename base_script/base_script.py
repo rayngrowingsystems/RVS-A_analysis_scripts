@@ -54,7 +54,11 @@ def create_mask(settings, mask_preview=True):
         binary_img = pcv.invert(binary_img)
 
     # creates mask preview image
-    rayn_utils.create_mask_preview(binary_img, spectral_array.pseudo_rgb, settings, mask_preview)
+    preview_settings = {
+        "overlay_mask": mask_options["overlay_mask"]
+    }
+
+    rayn_utils.create_mask_preview(binary_img, spectral_array.pseudo_rgb, preview_settings, mask_preview)
 
     return spectral_array, rvs_metadata, binary_img
 
@@ -146,7 +150,9 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
             for index in selected_index:
                 index_array = index_functions[index][1](spectral_array, 10)  # call the function of the selected index
                 index_hist = pcv.analyze.spectral_index(index_img=index_array, labeled_mask=labeled_objects,
-                                                        n_labels=n_obj, label="plant")
+                                                        n_labels=n_obj,
+                                                        min_bin=index_functions[index][2],
+                                                        max_bin=index_functions[index][3], label="plant")
                 index_results[index] = (index_array, index_hist)
 
     # return visual results
