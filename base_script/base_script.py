@@ -60,8 +60,6 @@ def create_mask(settings, mask_preview=True):
 def execute(script_name, settings, mask_file_name, preview=False):  # this is the analysis workflow
     print("--> Execute:", script_name, settings)
 
-    print("--> SessionData:", settings["experimentSettings"]["sessionData"])
-
     return_list = []
 
     # Load parameters from the settings dict TODO: Improve settings handling (using a class)
@@ -211,21 +209,6 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
     # signal results file
     return_list.append(("results", data_file_name,))
     # feedback_queue.put([script_name, 'results', data_file_name])
-
-    # TODO
-    session_data = {}
-    if "sessionData" in settings["experimentSettings"]:
-        session_data = settings["experimentSettings"]["sessionData"]
-        session_data["min"] = 2
-        if "max" in settings["experimentSettings"]["sessionData"]:
-            session_data["max"] = settings["experimentSettings"]["sessionData"]["max"] + 10
-        else:
-            session_data["max"] = 20
-    else:
-        session_data["min"] = 1
-        session_data["max"] = 10
-
-    return_list.append(("session_data", session_data,))
 
     return return_list
 
