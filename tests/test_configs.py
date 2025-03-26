@@ -9,10 +9,7 @@ REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 EXCLUDED_DIRS = {".git", ".idea", "tests", "__pycache__", ".pytest_cache", "presets"}
 
 # Discover all analysis script folders
-script_dirs = [
-    d for d in os.listdir(REPO_DIR)
-    if os.path.isdir(os.path.join(REPO_DIR, d)) and d not in EXCLUDED_DIRS
-]
+script_dirs = [d for d in os.listdir(REPO_DIR) if os.path.isdir(os.path.join(REPO_DIR, d)) and d not in EXCLUDED_DIRS]
 
 # Build paths for each folder
 script_config_pairs = [
@@ -68,7 +65,6 @@ def extract_keys_from_config_presets(config_data):
     return preset_keys
 
 
-
 def extract_used_script_keys(script_path):
     """Find all keys accessed via script_options[...] or full settings path."""
 
@@ -82,7 +78,7 @@ def extract_used_script_keys(script_path):
         r"(\w+)\s*=\s*settings\[\s*['\"]experimentSettings['\"]\s*]\[\s*['\"]analysis['\"]\s*]\[\s*['\"]scriptOptions['\"]\s*]\[\s*['\"]general['\"]\s*]"
     )
     aliases = alias_pattern.findall(content)
-    aliases.append("settings[\"experimentSettings\"][\"analysis\"][\"scriptOptions\"][\"general\"]")  # direct path
+    aliases.append('settings["experimentSettings"]["analysis"]["scriptOptions"]["general"]')  # direct path
 
     # Search for key access from any alias
     for alias in aliases:
@@ -107,8 +103,9 @@ def test_analysis_config_structure(script_path, config_path):
         assert "sections" in config_data[top_key]["options"], f"Missing '{top_key}.options.sections' in {config_path}"
 
         for section in config_data[top_key]["options"]["sections"]:
-            assert "settings" in section or "presets" in section, \
+            assert "settings" in section or "presets" in section, (
                 f"Missing 'settings' in section of '{top_key}' in {config_path}"
+            )
 
 
 @pytest.mark.parametrize("script_path, config_path", script_config_pairs)
@@ -136,7 +133,6 @@ def test_script_settings_vs_config_and_presets(script_path, config_path):
     assert not missing, f"{os.path.basename(script_path)} uses undefined settings: {missing}"
 
 
-
 # Check dropdown_values()/range_values() conditions match config
 @pytest.mark.parametrize("script_path, config_path", script_config_pairs)
 def test_getValuesFor_conditions(script_path, config_path):
@@ -160,7 +156,7 @@ def test_getValuesFor_conditions(script_path, config_path):
     for func_name, key in get_keys:
         assert f"def {func_name}" in content, f"Missing function: {func_name}() in {script_path}"
         # Handle different arg names (e.g., `name` or `setting`)
-        pattern = re.compile(rf'def {func_name}\((.*?)\):([\s\S]*?)(def |\Z)', re.MULTILINE)
+        pattern = re.compile(rf"def {func_name}\((.*?)\):([\s\S]*?)(def |\Z)", re.MULTILINE)
         match = pattern.search(content)
         assert match, f"Function body for {func_name} not found in {script_path}"
 

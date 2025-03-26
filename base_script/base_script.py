@@ -25,7 +25,7 @@ import rayn_utils
 import vl_convert as vlc
 from plantcv import plantcv as pcv
 
-matplotlib.use('agg')
+matplotlib.use("agg")
 
 
 # Default mask workflow. Selection of other mask scripts is possible in the UI.
@@ -37,7 +37,9 @@ def create_mask(settings, mask_preview=True):
 
     # get data from selected wavelength band
     if (mask_options["wavelength"] != "None") and (mask_options["wavelength"] != ""):
-        selected_layer = spectral_array.array_data[:, :, int(spectral_array.wavelength_dict[int(mask_options["wavelength"])])]
+        selected_layer = spectral_array.array_data[
+            :, :, int(spectral_array.wavelength_dict[int(mask_options["wavelength"])])
+        ]
     else:
         selected_layer = spectral_array.array_data[:, :, 0]
         warnings.warn("No wavelength for mask selected. Defaulting to first in list")
@@ -124,14 +126,20 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
 
     print("Writing image to " + pseudo_rgb_file_name)
     pcv.print_image(img=img_labelled, filename=pseudo_rgb_file_name)
-    return_list.append(("preview", pseudo_rgb_file_name,))
+    return_list.append(
+        (
+            "preview",
+            pseudo_rgb_file_name,
+        )
+    )
 
     if preview:
         return pseudo_rgb_file_name
 
     # analyze spectral reflectance
-    spectral_hist = pcv.analyze.spectral_reflectance(hsi=spectral_array, labeled_mask=labeled_objects, n_labels=n_obj,
-                                                     label="plant")
+    spectral_hist = pcv.analyze.spectral_reflectance(
+        hsi=spectral_array, labeled_mask=labeled_objects, n_labels=n_obj, label="plant"
+    )
 
     # analyze reflectance index
     index_functions = rayn_utils.get_index_functions()  # load all available index functions
@@ -142,14 +150,18 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
             warnings.simplefilter("ignore")
             for index in selected_index:
                 index_array = index_functions[index][1](spectral_array, 10)  # call the function of the selected index
-                index_hist = pcv.analyze.spectral_index(index_img=index_array, labeled_mask=labeled_objects,
-                                                        n_labels=n_obj,
-                                                        min_bin=index_functions[index][2],
-                                                        max_bin=index_functions[index][3], label="plant")
+                index_hist = pcv.analyze.spectral_index(
+                    index_img=index_array,
+                    labeled_mask=labeled_objects,
+                    n_labels=n_obj,
+                    min_bin=index_functions[index][2],
+                    max_bin=index_functions[index][3],
+                    label="plant",
+                )
                 index_results[index] = (index_array, index_hist)
 
     # return visual results
-    print("Writing visual outputs to " + out_folder['visuals'])
+    print("Writing visual outputs to " + out_folder["visuals"])
     if spectral_histogram:
         spectral_hist_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_spectral_histogram.png")
         chart_dict = spectral_hist.to_dict()
@@ -158,7 +170,12 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
         with open(spectral_hist_file_name, "wb") as f:
             f.write(png_data)
 
-        return_list.append(("spectral_hist", spectral_hist_file_name,))
+        return_list.append(
+            (
+                "spectral_hist",
+                spectral_hist_file_name,
+            )
+        )
 
     if index_histogram:
         for index, results_data in index_results.items():
@@ -168,7 +185,12 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
             with open(index_hist_file_name, "wb") as f:
                 f.write(png_data)
 
-            return_list.append((f"index_hist_{index}", index_hist_file_name,))
+            return_list.append(
+                (
+                    f"index_hist_{index}",
+                    index_hist_file_name,
+                )
+            )
 
     if false_color_image:
         # create false color representation
@@ -177,15 +199,27 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
             # masked_array = np.ma.array(results_data[0].array_data, mask=(object_mask > 0))
             # masked_array = np.ma.masked_invalid(masked_array)
 
-            index_false_color = pcv.visualize.pseudocolor(gray_img=results_data[0].array_data, mask=object_mask,
-                                                          background="white", axes=False,
-                                                          colorbar=True, cmap='viridis',
-                                                          min_value=index_functions[index][2],
-                                                          max_value=index_functions[index][3])
+            index_false_color = pcv.visualize.pseudocolor(
+                gray_img=results_data[0].array_data,
+                mask=object_mask,
+                background="white",
+                axes=False,
+                colorbar=True,
+                cmap="viridis",
+                min_value=index_functions[index][2],
+                max_value=index_functions[index][3],
+            )
 
-            index_false_color_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_{index}_false_color.png")
+            index_false_color_file_name = os.path.normpath(
+                f"{out_folder['visuals']}/{image_name}_{index}_false_color.png"
+            )
             pcv.print_image(img=index_false_color, filename=index_false_color_file_name)
-            return_list.append((f"index_false_color_{index}", index_false_color_file_name,))
+            return_list.append(
+                (
+                    f"index_false_color_{index}",
+                    index_false_color_file_name,
+                )
+            )
 
     print("--> Workflow done")
 
@@ -194,8 +228,9 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
     # adding meta data to outputs
     pcv.outputs.add_metadata("camera", str, rvs_metadata["camera"])
     pcv.outputs.add_metadata("firmware", str, rvs_metadata["firmware version"])
-    pcv.outputs.add_metadata("timestamp", datetime.datetime,
-                             f"{rvs_metadata['capture date']} {rvs_metadata['capture time']}")
+    pcv.outputs.add_metadata(
+        "timestamp", datetime.datetime, f"{rvs_metadata['capture date']} {rvs_metadata['capture time']}"
+    )
     pcv.outputs.add_metadata("filename", str, image_name)
     pcv.outputs.add_metadata("pixel_to_mm_factor", datetime.date, rvs_metadata["px to mm ratio"])
 
@@ -207,7 +242,12 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
     pcv.outputs.clear()
 
     # signal results file
-    return_list.append(("results", data_file_name,))
+    return_list.append(
+        (
+            "results",
+            data_file_name,
+        )
+    )
     # feedback_queue.put([script_name, 'results', data_file_name])
 
     return return_list
@@ -245,8 +285,9 @@ def process_rois(roi_items, rgb_image, crop_rectangle, roi_debug=False):  # get 
         elif roi_type == "Rectangle":
             # create a single rectangle ROI
             print("calculated x/y", roi_x - roi_width / 2, roi_y - roi_height / 2)
-            roi = pcv.roi.rectangle(x=roi_x - roi_width / 2, y=roi_y - roi_height / 2,
-                                    h=roi_height, w=roi_width, img=rgb_image)
+            roi = pcv.roi.rectangle(
+                x=roi_x - roi_width / 2, y=roi_y - roi_height / 2, h=roi_height, w=roi_width, img=rgb_image
+            )
         elif roi_type == "Ellipse":
             roi_radius1 = int(roi_width / 2)
             roi_radius2 = int(roi_height / 2)

@@ -1,0 +1,31 @@
+name: Ruff Lint & Format
+
+on:
+  push:
+    branches:
+      - "**"  # Change if using a different default branch
+  pull_request:
+    branches:
+      - "**"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install Ruff
+        run: pip install ruff
+
+      - name: Ruff Lint Check
+        run: ruff check .
+
+      - name: Ruff Format Check
+        run: ruff format --check .
