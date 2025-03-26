@@ -12,20 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-import numpy as np
-import warnings
 import datetime
-
-from plantcv import plantcv as pcv
-import rayn_utils
-import sys
 import importlib
+import os
+import sys
+import warnings
+
 import cv2
-
-import vl_convert as vlc
-
 import matplotlib
+import numpy as np
+import rayn_utils
+import vl_convert as vlc
+from plantcv import plantcv as pcv
+
 matplotlib.use('agg')
 
 
@@ -85,7 +84,6 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
 
     roi_overlay = script_options["roi_overlay"]
     line_width = script_options["line_width"]
-    #convert_pixel = script_options["convert_pixel"]
 
     false_color_image = script_options["false_color_image"]
     spectral_histogram = script_options["spectral_histogram"]
@@ -226,9 +224,9 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
     else:
         session_data["min"] = 1
         session_data["max"] = 10
-    
+
     return_list.append(("session_data", session_data,))
-    
+
     return return_list
 
 
