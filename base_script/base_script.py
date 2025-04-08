@@ -21,6 +21,8 @@ import warnings
 import cv2
 import matplotlib
 import numpy as np
+from altair.vegalite.v5.theme import theme
+
 import rayn_utils
 import vl_convert as vlc
 from plantcv import plantcv as pcv
@@ -166,7 +168,16 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
         spectral_hist_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_spectral_histogram.png")
         chart_dict = spectral_hist.to_dict()
         chart_dict["spec"]["mark"]["point"] = True
-        png_data = vlc.vegalite_to_png(chart_dict, scale=1.5)
+        chart_dict["spec"]["encoding"]["x"]["title"] = "Wavelength Bands"
+        chart_dict["config"]["facet"]["spacing"] = 30
+
+        chart_dict["spec"].setdefault("transform", []).insert(0, {
+            "filter": "datum.label != 0"
+        })
+
+        rayn_utils.apply_theme_to_chart_dict(chart_dict, settings["experimentSettings"]["theme"])
+
+        png_data = vlc.vegalite_to_png(chart_dict, scale=1.5) #TODO: rather export it as svg?
         with open(spectral_hist_file_name, "wb") as f:
             f.write(png_data)
 
@@ -181,6 +192,10 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
         for index, results_data in index_results.items():
             index_hist_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_{index}_histogram.png")
             chart_dict = results_data[1].to_dict()
+            chart_dict["config"]["facet"]["spacing"] = 30
+            chart_dict["spec"]["encoding"]["x"]["title"] = f"{index.upper()} Index Values"
+            rayn_utils.apply_theme_to_chart_dict(chart_dict, settings["experimentSettings"]["theme"])
+
             png_data = vlc.vegalite_to_png(chart_dict, scale=1.5)
             with open(index_hist_file_name, "wb") as f:
                 f.write(png_data)
