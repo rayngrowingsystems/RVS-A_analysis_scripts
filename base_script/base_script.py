@@ -169,13 +169,11 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
         chart_dict["spec"]["encoding"]["x"]["title"] = "Wavelength Bands"
         chart_dict["config"]["facet"]["spacing"] = 30
 
-        chart_dict["spec"].setdefault("transform", []).insert(0, {
-            "filter": "datum.label != 0"
-        })
+        chart_dict["spec"].setdefault("transform", []).insert(0, {"filter": "datum.label != 0"})
 
         rayn_utils.apply_theme_to_chart_dict(chart_dict, settings["experimentSettings"]["theme"])
 
-        png_data = vlc.vegalite_to_png(chart_dict, scale=1.5) #TODO: rather export it as svg?
+        png_data = vlc.vegalite_to_png(chart_dict, scale=1.5)  # TODO: rather export it as svg?
         with open(spectral_hist_file_name, "wb") as f:
             f.write(png_data)
 
@@ -194,7 +192,7 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
             chart_dict["spec"]["encoding"]["x"]["title"] = f"{index.upper()} Index Values"
             rayn_utils.apply_theme_to_chart_dict(chart_dict, settings["experimentSettings"]["theme"])
 
-            png_data = vlc.vegalite_to_png(chart_dict, scale=1.5) #TODO: rather export it as svg?
+            png_data = vlc.vegalite_to_png(chart_dict, scale=1.5)  # TODO: rather export it as svg?
             with open(index_hist_file_name, "wb") as f:
                 f.write(png_data)
 
