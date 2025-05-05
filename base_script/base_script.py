@@ -21,8 +21,6 @@ import warnings
 import cv2
 import matplotlib
 import numpy as np
-from altair.vegalite.v5.theme import theme
-
 import rayn_utils
 import vl_convert as vlc
 from plantcv import plantcv as pcv
