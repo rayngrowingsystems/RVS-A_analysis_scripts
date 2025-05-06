@@ -103,6 +103,7 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
     # set plantcv variables
     pcv.params.line_thickness = int(line_width)
     pcv.params.debug = None
+    pcv.params.dpi = 200
 
     # ANALYSIS WORKFLOW START
     print("--> Starting workflow")
@@ -187,7 +188,7 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
 
         rayn_utils.apply_theme_to_chart_dict(chart_dict, settings["experimentSettings"]["theme"])
 
-        png_data = vlc.vegalite_to_png(chart_dict, scale=1.5)  # TODO: rather export it as svg?
+        png_data = vlc.vegalite_to_png(chart_dict, scale=3)  # TODO: rather export it as svg?
         with open(spectral_hist_file_name, "wb") as f:
             f.write(png_data)
 
@@ -206,7 +207,7 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
             chart_dict["spec"]["encoding"]["x"]["title"] = f"{index.upper()} Index Values"
             rayn_utils.apply_theme_to_chart_dict(chart_dict, settings["experimentSettings"]["theme"])
 
-            png_data = vlc.vegalite_to_png(chart_dict, scale=1.5)  # TODO: rather export it as svg?
+            png_data = vlc.vegalite_to_png(chart_dict, scale=3)  # TODO: rather export it as svg?
             with open(index_hist_file_name, "wb") as f:
                 f.write(png_data)
 
