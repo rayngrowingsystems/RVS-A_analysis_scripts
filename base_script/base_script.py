@@ -84,6 +84,7 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
     roi_overlay = script_options["roi_overlay"]
     line_width = script_options["line_width"]
     false_color_image = script_options["false_color_image"]
+    image_background = script_options["image_background"]
     spectral_histogram = script_options["spectral_histogram"]
     index_histogram = script_options["index_histogram"]
     auto_index_limits = script_options["auto_index_limits"]
@@ -227,10 +228,13 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
             min_lim, max_lim = _get_min_max_limits(
                 results_data[0].array_data, index, persistent_data, auto_index_limits, min_percentile, max_percentile
             )
+
+            background = spectral_array.pseudo_rgb if image_background else "white"
+
             index_false_color = pcv.visualize.pseudocolor(
                 gray_img=results_data[0].array_data,
                 mask=object_mask,
-                background="white",
+                background=background,
                 axes=False,
                 colorbar=True,
                 cmap="viridis",
