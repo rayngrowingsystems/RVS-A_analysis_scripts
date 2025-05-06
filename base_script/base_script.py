@@ -81,13 +81,24 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
     script_options = settings["experimentSettings"]["analysis"]["scriptOptions"]["general"]
 
     selected_index = script_options["index_selection"]
-
     roi_overlay = script_options["roi_overlay"]
     line_width = script_options["line_width"]
-
     false_color_image = script_options["false_color_image"]
     spectral_histogram = script_options["spectral_histogram"]
     index_histogram = script_options["index_histogram"]
+    auto_index_limits = script_options["auto_index_limits"]
+    min_percentile = script_options["min_percentile"]
+    max_percentile = script_options["max_percentile"]
+
+    # get persistent session information
+    if "persistent" in settings["experimentSettings"]["sessionData"]:
+        session_data = settings["experimentSettings"]["sessionData"]
+        persistent_data = session_data["persistent"]
+        print("Loaded persistent session Data")
+    else:
+        session_data = dict()
+        persistent_data = dict()
+        print("Created persistent session Data")
 
     # set plantcv variables
     pcv.params.line_thickness = int(line_width)
@@ -150,12 +161,15 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
             warnings.simplefilter("ignore")
             for index in selected_index:
                 index_array = index_functions[index][1](spectral_array, 10)  # call the function of the selected index
+                min_lim, max_lim = _get_min_max_limits(
+                    index_array.array_data, index, persistent_data, auto_index_limits, min_percentile, max_percentile
+                )
                 index_hist = pcv.analyze.spectral_index(
                     index_img=index_array,
                     labeled_mask=labeled_objects,
                     n_labels=n_obj,
-                    min_bin=index_functions[index][2],
-                    max_bin=index_functions[index][3],
+                    min_bin=min_lim,
+                    max_bin=max_lim,
                     label="plant",
                 )
                 index_results[index] = (index_array, index_hist)
@@ -209,7 +223,9 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
             object_mask = np.where(labeled_objects > 0, 1, 0)
             # masked_array = np.ma.array(results_data[0].array_data, mask=(object_mask > 0))
             # masked_array = np.ma.masked_invalid(masked_array)
-
+            min_lim, max_lim = _get_min_max_limits(
+                results_data[0].array_data, index, persistent_data, auto_index_limits, min_percentile, max_percentile
+            )
             index_false_color = pcv.visualize.pseudocolor(
                 gray_img=results_data[0].array_data,
                 mask=object_mask,
@@ -217,8 +233,8 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
                 axes=False,
                 colorbar=True,
                 cmap="viridis",
-                min_value=index_functions[index][2],
-                max_value=index_functions[index][3],
+                min_value=min_lim,
+                max_value=max_lim,
             )
 
             index_false_color_file_name = os.path.normpath(
@@ -251,14 +267,10 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
 
     pcv.outputs.save_results(data_file_name, outformat="json")
     pcv.outputs.clear()
+    session_data["persistent"] = persistent_data
 
     # signal results file
-    return_list.append(
-        (
-            "results",
-            data_file_name,
-        )
-    )
+    return_list.extend([("results", data_file_name), ("session_data", session_data)])
     # feedback_queue.put([script_name, 'results', data_file_name])
 
     return return_list
@@ -340,3 +352,29 @@ def _get_mask_function(mask_script_filename):
         print("Internal mask used")
 
         return create_mask
+
+
+def _get_min_max_limits(data, index, persistant_session_data, limits_option, min_percentile, max_percentile):
+    index_functions = rayn_utils.get_index_functions()  # load all available index functions
+
+    if limits_option:
+        finite_data = data[np.isfinite(data)]
+        min_lim = np.percentile(finite_data, min_percentile)  # np.min(finite_data)
+        max_lim = np.percentile(finite_data, max_percentile)  # np.max(finite_data)
+        print(min_lim, max_lim)
+
+        if "minmax_limits" in persistant_session_data and index in persistant_session_data["minmax_limits"]:
+            minmax_limits = persistant_session_data["minmax_limits"][index]
+            print(f"loading old min/max limits for {index} ({minmax_limits['min'], minmax_limits['max']})")
+
+            min_lim = min(min_lim, minmax_limits.get("min"))
+            max_lim = max(max_lim, minmax_limits.get("max"))
+
+        print(f"Used the following min/max limits for {index}: min: {min_lim}, max: {max_lim}")
+        persistant_session_data.setdefault("minmax_limits", {})[index] = {"min": float(min_lim), "max": float(max_lim)}
+
+    else:
+        min_lim = index_functions[index][2]
+        max_lim = index_functions[index][3]
+
+    return min_lim, max_lim
