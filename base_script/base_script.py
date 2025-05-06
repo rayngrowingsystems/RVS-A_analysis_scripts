@@ -187,7 +187,7 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
 
         chart_dict["spec"].setdefault("transform", []).insert(0, {"filter": "datum.label != 0"})
 
-        rayn_utils.apply_theme_to_chart_dict(chart_dict, settings["experimentSettings"]["theme"])
+        rayn_utils.apply_theme_to_chart_dict(chart_dict, settings['experimentSettings']['themeBackgroundColor'])
 
         png_data = vlc.vegalite_to_png(chart_dict, scale=3)  # TODO: rather export it as svg?
         with open(spectral_hist_file_name, "wb") as f:
@@ -206,7 +206,7 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
             chart_dict = results_data[1].to_dict()
             chart_dict["config"]["facet"]["spacing"] = 30
             chart_dict["spec"]["encoding"]["x"]["title"] = f"{index.upper()} Index Values"
-            rayn_utils.apply_theme_to_chart_dict(chart_dict, settings["experimentSettings"]["theme"])
+            rayn_utils.apply_theme_to_chart_dict(chart_dict, settings['experimentSettings']['themeBackgroundColor'])
 
             png_data = vlc.vegalite_to_png(chart_dict, scale=3)  # TODO: rather export it as svg?
             with open(index_hist_file_name, "wb") as f:
@@ -245,7 +245,12 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
             index_false_color_file_name = os.path.normpath(
                 f"{out_folder['visuals']}/{image_name}_{index}_false_color.png"
             )
-            pcv.print_image(img=index_false_color, filename=index_false_color_file_name)
+            rayn_utils.print_themed_pseudocolor_img(index_false_color_file_name,
+                                                    index_false_color,
+                                                    index,
+                                                    settings['experimentSettings']['themeBackgroundColor'],
+                                                    pcv.params.dpi)
+
             return_list.append(
                 (
                     f"index_false_color_{index}",
