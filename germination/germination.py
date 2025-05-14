@@ -164,6 +164,7 @@ def execute(script_name, settings, mask_file_name, preview=False):
     img_date_time = f"{rvs_metadata['capture date']} {rvs_metadata['capture time']}"
     date = datetime.datetime.strptime(img_date_time, "%Y-%m-%d %H:%M:%S")
     vis_img = img_labelled
+    mask_copy = cv2.cvtColor(mask.copy(), cv2.COLOR_GRAY2RGB)
 
     print(f"Analyzing image taken {img_date_time}")
     for i, roi in enumerate(rois):
@@ -174,12 +175,14 @@ def execute(script_name, settings, mask_file_name, preview=False):
             text = str(i)
             text_position = (roi_centroid[0] + offset[0], roi_centroid[1] + offset[1])
             cv2.putText(vis_img, text, text_position, font, font_scale, text_color, thickness, cv2.LINE_AA)
+            cv2.putText(mask_copy, text, text_position, font, font_scale, text_color, thickness, cv2.LINE_AA)
 
         if detection_info.at[i, "emergence_time"]:
             print(f"skipping ROI {i}")
             color = COLOR_GREEN
             if roi_overlay:
                 cv2.drawContours(vis_img, roi.contours[0][0], -1, color, pcv.params.line_thickness)
+                cv2.drawContours(mask_copy, roi.contours[0][0], -1, color, pcv.params.line_thickness)
             continue
 
         buffer_roi = create_buffer_zone_roi(vis_img, roi, buffer_roi_ratio)
@@ -262,6 +265,8 @@ def execute(script_name, settings, mask_file_name, preview=False):
                 if mark_objects:
                     cv2.drawMarker(vis_img, (cx, cy), cross_color, markerType=cv2.MARKER_CROSS,
                                    markerSize=cross_size, thickness=2)
+                    cv2.drawMarker(mask_copy, (cx, cy), cross_color, markerType=cv2.MARKER_CROSS,
+                                   markerSize=cross_size, thickness=2)
 
         if object_in_buffer and not object_in_roi:
             print(f"Outer activity detected at ROI {i}")
@@ -285,6 +290,7 @@ def execute(script_name, settings, mask_file_name, preview=False):
         # Draw the contour in the selected color
         if roi_overlay:
             cv2.drawContours(vis_img, roi.contours[0][0], -1, color, pcv.params.line_thickness)
+            cv2.drawContours(mask_copy, roi.contours[0][0], -1, color, pcv.params.line_thickness)
 
         if preview and show_zones:
             cv2.drawContours(vis_img, buffer_roi.contours[0][0], -1, COLOR_YELLOW, pcv.params.line_thickness)
@@ -305,13 +311,24 @@ def execute(script_name, settings, mask_file_name, preview=False):
 
     pseudo_rgb_file_name = os.path.normpath(f"{out_folder['images']}/{image_name}_pseudoRGB.png")
     print("Writing image to " + pseudo_rgb_file_name)
-    pcv.print_image(img=img_labelled, filename=pseudo_rgb_file_name)
+    pcv.print_image(img=vis_img, filename=pseudo_rgb_file_name)
     return_list.append(
         (
             "preview",
             pseudo_rgb_file_name,
         )
     )
+
+    mask_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_mask.png")
+    print("Writing image to " + mask_file_name)
+    pcv.print_image(img=mask_copy, filename=mask_file_name)
+    return_list.append(
+        (
+            "image_mask",
+            mask_file_name
+        )
+    )
+
     if preview:
         return pseudo_rgb_file_name
 
