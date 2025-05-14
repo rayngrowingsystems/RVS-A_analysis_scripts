@@ -305,9 +305,7 @@ def execute(script_name, settings, mask_file_name, preview=False):
     session_data["temporary"] = temp_data
     return_list.append(("session_data", session_data))
 
-    # write detection table
-    data_file_name = os.path.normpath(f"{out_folder['data']}/plant_detection.csv")
-    detection_info.to_csv(data_file_name)
+
 
     pseudo_rgb_file_name = os.path.normpath(f"{out_folder['images']}/{image_name}_pseudoRGB.png")
     print("Writing image to " + pseudo_rgb_file_name)
@@ -319,6 +317,9 @@ def execute(script_name, settings, mask_file_name, preview=False):
         )
     )
 
+    if preview:
+        return pseudo_rgb_file_name
+
     mask_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_mask.png")
     print("Writing image to " + mask_file_name)
     pcv.print_image(img=mask_copy, filename=mask_file_name)
@@ -329,8 +330,11 @@ def execute(script_name, settings, mask_file_name, preview=False):
         )
     )
 
-    if preview:
-        return pseudo_rgb_file_name
+    # write detection table
+    data_file_name = os.path.normpath(f"{out_folder['data']}/plant_detection.csv")
+    detection_info.to_csv(data_file_name)
+
+
 
     print("--> Workflow done")
     return return_list
