@@ -162,7 +162,7 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             for index in selected_index:
-                index_array = index_functions[index][1](spectral_array, 10)  # call the function of the selected index
+                index_array = index_functions[index][1](spectral_array, 20)  # call the function of the selected index
                 min_lim, max_lim = _get_min_max_limits(
                     index_array.array_data, index, persistent_data, auto_index_limits, min_percentile, max_percentile
                 )
