@@ -74,112 +74,182 @@ def create_mask(settings, mask_preview=True):
     return spectral_array, rvs_metadata, final_mask
 
 
-def execute(script_name, settings, mask_file_name, preview=False):  # this is the analysis workflow
+def execute(script_name, settings, mask_file_name, preview=False):
     print("--> Execute:", script_name, settings)
 
     return_list = []
-
-    # Load parameters from the settings dict TODO: Improve settings handling (using a class)
-    # files and folder
     out_folder = settings["outputFolder"]
 
-    # ROIs
+    # ROIs and crop settings
     roi_items = settings["experimentSettings"]["roiInfo"]["roiList"]
-    roi_mode_selection = settings["experimentSettings"]["roiInfo"]["detectionMode"]
-    roi_mode_types = ["partial", "cutto", "largest"]  # types available for plantcv.roi.filter
-    roi_mode = roi_mode_types[roi_mode_selection]
-
-    # Crop rectangle
     crop_rectangle = settings["experimentSettings"]["cropRect"]
 
-    # script specific settings (options are defined in the .config file)
+    # Script options
     script_options = settings["experimentSettings"]["analysis"]["scriptOptions"]["general"]
-
     roi_overlay = script_options["roi_overlay"]
     mark_objects = script_options["mark_objects"]
     line_width = script_options["line_width"]
 
-    # get temporary session information
-    if "temporary" in settings["experimentSettings"]["sessionData"]:
-        session_data = settings["experimentSettings"]["sessionData"]
-        temp_data = session_data["temporary"]
-        print("Loaded temporary session Data")
-    else:
-        session_data = dict()
-        temp_data = dict()
-        print("Created temporary session Data")
+    # Session handling
+    session_data = settings["experimentSettings"].get("sessionData", {})
+    temp_data = session_data.get("temporary", {})
+    print("Loaded temporary session Data" if temp_data else "Created temporary session Data")
 
-    # set plantcv variables
     pcv.params.line_thickness = int(line_width)
     pcv.params.debug = None
 
-    # ANALYSIS WORKFLOW START
-    print("--> Starting workflow")
-
-    # determine the mask script based on the chosen option
+    # Load image and mask
     create_function = _get_mask_function(mask_file_name)
-
-    # retrieving preprocessed data cube, meta data and mask
     spectral_array, rvs_metadata, mask = create_function(settings, mask_preview=False)
-
-    # extract image name
-    filename = spectral_array.filename  # TODO move this to rvs_metadata
-    image_name = os.path.split(filename)[-1]
-    image_name = os.path.splitext(image_name)[0]
-
-    # copy unaltered pseudo rgb image for plotting results/debug information on it later
+    image_name = os.path.splitext(os.path.split(spectral_array.filename)[-1])[0]
     img_labelled = np.copy(spectral_array.pseudo_rgb)
 
-    if roi_items:  # only if ROIs are set
-        # process ROI items forwarded from the UI
-        rois = process_rois(roi_items, img_labelled, crop_rectangle)
-    else:  # if no ROIs are set, no ROI filter is applied
-        warnings.warn("No ROIs set and nothing is analyzed. Please set ROIs to perform the analysis!")
+    if not roi_items:
+        warnings.warn("No ROIs set. Analysis skipped.")
         return None
 
-    # ANALYSES
-    # plant detection start
-    data_file_name = os.path.normpath(f"{out_folder['data']}/plant_detection.csv")
+    rois = process_rois(roi_items, img_labelled, crop_rectangle)
     num_rois = len(rois.contours)
 
-    if "previous_detection" in temp_data:
-        previous_detection = temp_data["previous_detection"]
-        if len(previous_detection) != num_rois:
-            print("Number of ROIs in previous run does not match the number of ROIs in the current run!")
+    # Init or load detection info and centroid histories
+    if "detection_info" in temp_data:
+        detection_info = pd.DataFrame(temp_data["detection_info"])
+        print("Loaded previous detection_info from session")
     else:
-        previous_detection = [False] * num_rois
+        detection_info = pd.DataFrame({
+            "ROI": list(range(num_rois)),
+            "emergence_time": [False] * num_rois,
+            "center_activity": [False] * num_rois,
+            "outer_activity": [False] * num_rois,
+            "potential_intrusion": [False] * num_rois,
+        }).set_index("ROI")
+
+    centroid_history = temp_data.get("centroid_history", {i: [] for i in range(num_rois)})
+    outer_centroid_history = temp_data.get("outer_centroid_history", {i: [] for i in range(num_rois)})
+
+    # Colors
+    COLOR_GREEN  = (0, 255, 0)
+    COLOR_RED    = (0, 0, 255)
+    COLOR_ORANGE = (0, 165, 255)
+    COLOR_YELLOW = (0, 255, 255)
 
     img_date_time = f"{rvs_metadata['capture date']} {rvs_metadata['capture time']}"
+    date = datetime.datetime.strptime(img_date_time, "%Y-%m-%d %H:%M:%S")
+    vis_img = img_labelled
 
+    print(f"Analyzing image taken {img_date_time}")
     for i, roi in enumerate(rois):
-        kept_mask = pcv.roi.filter(mask, roi, roi_type=roi_mode)
+        if detection_info.at[i, "emergence_time"] != False:
+            print(f"skipping ROI {i}")
+            continue
+
+        buffer_roi = create_buffer_zone_roi(vis_img, roi, 0.1)
+
+        kept_mask = pcv.roi.filter(mask, roi, roi_type='partial')
+        kept_buffer_mask = pcv.roi.filter(mask, buffer_roi, roi_type='partial')
+
         contours, _ = cv2.findContours(kept_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        buffer_contours, _ = cv2.findContours(kept_buffer_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        if len(contours) > 0 and previous_detection[i] is False:
-            print(f"Object detected in ROI {i} ({img_date_time})")
-            previous_detection[i] = img_date_time
-        else:
-            pass
+        object_in_roi = len(contours) > 0
+        object_in_buffer = len(buffer_contours) > 0
 
-        if mark_objects and len(contours) > 0:
+        cross_size = 30
+
+        if object_in_roi:
+            centroids_in_roi = []
             for cnt in contours:
-                M = cv2.moments(cnt)
-                if M["m00"] != 0:
-                    cx = int(M["m10"] / M["m00"])
-                    cy = int(M["m01"] / M["m00"])
+                center = is_object_in_center(cnt, roi, threshold_ratio=0.5)
 
-                    # Draw a yellow cross at each centroid
-                    cross_color = (255, 255, 0)
-                    cross_size = 20
-                    cv2.drawMarker(img_labelled, (cx, cy), cross_color, markerType=cv2.MARKER_CROSS,
-                                   markerSize=cross_size, thickness=line_width)
+                cx, cy = get_object_centroid(cnt)
+                centroids_in_roi.append((cx, cy))
+                centroid_history[i].append(centroids_in_roi)
 
-        # Choose color: Green if plant detected, Red otherwise
-        color = (0, 255, 0) if previous_detection[i] else (0, 0, 255)
-        draw_roi_overlay(img_labelled, roi, color)
+                cross_color = COLOR_ORANGE
+
+                if center:
+                    if detection_info.at[i, "potential_intrusion"] and len(centroid_history[i]) >= 2:
+                        # Get previous centroids (from last timepoint)
+                        previous_centroids = centroid_history[i][-2]
+                        current_centroids = centroid_history[i][-1]
+                        print(
+                            f"Center object in ROI {i} detected! Checking if this is just the previously detected intruder...")
+
+                        if are_centroids_close(current_centroids, previous_centroids, max_distance=30):
+                            cross_color = COLOR_RED
+                            print(f"⚠️ Center object in ROI {i} is likely continuation of previous intrusion.")
+                            # keep potential_intrusion flag, skip emergence_time
+                        else:
+                            cross_color = COLOR_GREEN
+                            print(f"🌱 New valid center object in ROI {i}")
+                            detection_info.at[i, "emergence_time"] = img_date_time
+                    else:
+                        cross_color = COLOR_GREEN
+                        print(f"🌱 Center object in ROI {i} ({img_date_time})")
+                        detection_info.at[i, "emergence_time"] = img_date_time
+
+                elif not center and detection_info.at[i, "outer_activity"] == False:
+                    cross_color = COLOR_GREEN
+                    print(f"🔵 Edge object in ROI {i}, no prior surrounding activity ({img_date_time})")
+                    detection_info.at[i, "emergence_time"] = img_date_time
+                    # you could also track secondary_centroid here if needed
+
+                elif not center and detection_info.at[i, "outer_activity"] != False:
+                    print(
+                        f"⚠️ Edge object in ROI {i}, with prior surroundings activity — likely intrusion, looking deeper ... ({img_date_time})")
+
+                    previous_outer = outer_centroid_history[i][-1]
+                    current_centroids = centroid_history[i][-1]
+
+                    if are_centroids_close(current_centroids, previous_outer, max_distance=30):
+                        print(f"⚠️ Edge object in ROI {i} close to previous object in buffer — likely intrusion")
+                        if not detection_info.at[i, "potential_intrusion"]:
+                            detection_info.at[i, "potential_intrusion"] = img_date_time
+                        cross_color = COLOR_YELLOW
+                    elif detection_info.at[i, "potential_intrusion"] and are_centroids_close(current_centroids,
+                                                                                             centroid_history[i][-2],
+                                                                                             max_distance=30):
+                        print(
+                            f"⚠️ Edge object in ROI {i} close to previous edge object — likely continuation of previous intrusion.")
+                        cross_color = COLOR_RED
+                    else:
+                        print(f"New distant edge object — seems to be an emergence")
+                        print(previous_outer, current_centroids)
+                        detection_info.at[i, "emergence_time"] = img_date_time
+
+                cv2.drawMarker(vis_img, (cx, cy), cross_color, markerType=cv2.MARKER_CROSS,
+                               markerSize=cross_size, thickness=2)
+
+        if object_in_buffer and object_in_roi == False:
+            print(f"Outer acitivity detected at ROI {i}")
+            detection_info.at[i, "outer_activity"] = img_date_time
+            centroids_in_buffer = []
+
+            for cnt in buffer_contours:
+                cx, cy = get_object_centroid(cnt)
+                centroids_in_buffer.append((cx, cy))
+                outer_centroid_history[i].append(centroids_in_buffer)
+
+        if detection_info.at[i, "emergence_time"]:
+            color = COLOR_GREEN
+        elif detection_info.at[i, "potential_intrusion"]:
+            color = COLOR_YELLOW
+        elif detection_info.at[i, "outer_activity"]:
+            color = COLOR_ORANGE
+        else:
+            color = COLOR_RED
+
+        # Draw the contour in the selected color
+        cv2.drawContours(vis_img, roi.contours[0][0], -1, color, pcv.params.line_thickness)
+
+    # Update session
+    temp_data["detection_info"] = detection_info.to_dict()
+    temp_data["centroid_history"] = centroid_history
+    temp_data["outer_centroid_history"] = outer_centroid_history
+    session_data["temporary"] = temp_data
+    return_list.append(("session_data", session_data))
 
     pseudo_rgb_file_name = os.path.normpath(f"{out_folder['images']}/{image_name}_pseudoRGB.png")
-
     print("Writing image to " + pseudo_rgb_file_name)
     pcv.print_image(img=img_labelled, filename=pseudo_rgb_file_name)
     return_list.append(
@@ -189,34 +259,9 @@ def execute(script_name, settings, mask_file_name, preview=False):  # this is th
         )
     )
 
-    print("Writing detection data")
-    with open(data_file_name, "w") as f:
-        f.write("ROI,timestamp\n")
-        for i, timestamp in enumerate(previous_detection):
-            if timestamp:
-                f.write(f"{i+1},{timestamp}\n")
-            else:
-                f.write(f"{i + 1},No emergence detected\n")
-
-    print("Writing session data")
-    temp_data["previous_detection"] = previous_detection
-    session_data["temporary"] = temp_data
-
-    return_list.append(
-        (
-            "session_data",
-            session_data,
-        )
-    )
-
-    if preview:
-        return pseudo_rgb_file_name
-
     print("--> Workflow done")
-
-    # ANALYSIS WORKFLOW END
-
     return return_list
+
 
 
 def dropdown_values(setting, wavelengths):  # fills UI element with values
@@ -307,92 +352,87 @@ def _get_mask_function(mask_script_filename):
         return create_mask
 
 
-def initialize_detection_table(roi_count, existing_file=None):
-    """
-    Create or load a detection table to track ROI emergence over time.
-    Columns:
-        - ROI index
-        - Emergence time (timestamp string or False)
-        - Center activity seen (bool)
-        - Outer activity seen (bool)
-        - Potential intrusion (bool)
-    """
-    if existing_file and os.path.exists(existing_file):
-        df = pd.read_csv(existing_file)
-        df.set_index("ROI", inplace=True)
+def unwrap_contour(roi):
+    """Extract the innermost NumPy contour array from a nested PlantCV ROI object."""
+    contour = roi.contours[0]
+
+    # Keep unwrapping lists or tuples
+    while isinstance(contour, (list, tuple)):
+        contour = contour[0]
+
+    # Verify it's a valid OpenCV contour: shape (N, 1, 2)
+    if isinstance(contour, np.ndarray) and contour.ndim == 3 and contour.shape[1:] == (1, 2):
+        return contour
     else:
-        df = pd.DataFrame({
-            "ROI": list(range(roi_count)),
-            "emergence_time": [False] * roi_count,
-            "center_activity": [False] * roi_count,
-            "outer_activity": [False] * roi_count,
-            "potential_intrusion": [False] * roi_count,
-        }).set_index("ROI")
-
-    return df
+        raise ValueError(
+            f"Invalid contour shape or type: {type(contour)}, shape: {getattr(contour, 'shape', 'unknown')}")
 
 
-def update_detection_table(df, roi_index, timestamp, center, outer, intrusion=False):
-    """
-    Update the detection dataframe for a given ROI.
-    """
-    if center:
-        df.at[roi_index, "center_activity"] = True
-    if outer:
-        df.at[roi_index, "outer_activity"] = True
-    if intrusion:
-        df.at[roi_index, "potential_intrusion"] = True
-    if df.at[roi_index, "emergence_time"] is False and not intrusion:
-        df.at[roi_index, "emergence_time"] = timestamp
-    return df
+def get_roi_centroid(roi):
+    contour = unwrap_contour(roi)
+    M = cv2.moments(contour)
+    if M["m00"] != 0:
+        cx = int(M["m10"] / M["m00"])
+        cy = int(M["m01"] / M["m00"])
+        return (cx, cy)
+    return None
 
 
-def save_detection_table(df, path):
-    df.to_csv(path)
+def estimate_radius_from_contour(roi, centroid):
+    contour = unwrap_contour(roi)
+    cx, cy = centroid
+    distances = np.sqrt((contour[:, 0, 0] - cx) ** 2 + (contour[:, 0, 1] - cy) ** 2)
+    return int(np.max(distances))  # use max to ensure safe zone fully wraps
 
 
-def is_likely_intrusion(cnt, roi_contour, roi_record, area_threshold=100, safe_zone_ratio=0.25):
-    """
-    Determine if a contour is a likely intrusion based on ROI activity history.
+def create_buffer_zone_roi(img, roi, buffer_zone_ratio):
+    centroid = get_roi_centroid(roi)
+    radius = estimate_radius_from_contour(roi, centroid)
+    buffer_radius = int(radius + radius * buffer_zone_ratio)
+    roi = pcv.roi.circle(img=img, x=centroid[0], y=centroid[1], r=buffer_radius)
 
-    Parameters:
-    - cnt: Detected object contour
-    - roi_contour: Numpy array of the ROI shape
-    - roi_record: One row (Series) from the detection DataFrame for the current ROI
-    - area_threshold: Area threshold for detecting large objects
-    - safe_zone_ratio: Fraction of ROI radius considered "central"
+    return roi
 
-    Returns:
-    - True if likely intrusion, False otherwise
-    """
 
-    area = cv2.contourArea(cnt)
-    if area < 1:
-        return False
+def is_object_in_center(detected_object, roi, threshold_ratio=0.5):
+    roi_centroid = get_roi_centroid(roi)
+    if roi_centroid is None:
+        return None
 
-    M = cv2.moments(cnt)
+    roi_radius = estimate_radius_from_contour(roi, roi_centroid)
+
+    M = cv2.moments(detected_object)
     if M["m00"] == 0:
-        return False
+        return None
 
     cx = int(M["m10"] / M["m00"])
     cy = int(M["m01"] / M["m00"])
 
-    x, y, w, h = cv2.boundingRect(roi_contour)
-    center_x = x + w // 2
-    center_y = y + h // 2
-    safe_radius = int(min(w, h) * safe_zone_ratio)
+    dist = np.sqrt((cx - roi_centroid[0]) ** 2 +
+                   (cy - roi_centroid[1]) ** 2)
 
-    dist = np.sqrt((cx - center_x) ** 2 + (cy - center_y) ** 2)
-    is_center = dist < safe_radius
-    is_outer = not is_center
+    return (cx, cy) if dist < roi_radius * threshold_ratio else None
 
-    # Read historical flags from the ROI record
-    center_seen = roi_record["center_activity"]
-    outer_seen = roi_record["outer_activity"]
 
-    if is_center:
-        return False  # not an intrusion
-    if is_outer and area > area_threshold and outer_seen and not center_seen:
-        return True
+def get_object_centroid(contour):
+    M = cv2.moments(contour)
+    if M["m00"] != 0:
+        cx = int(M["m10"] / M["m00"])
+        cy = int(M["m01"] / M["m00"])
+    else:
+        # Fallback: use geometric center (mean of all points)
+        cx = int(np.mean(contour[:, 0, 0]))
+        cy = int(np.mean(contour[:, 0, 1]))
+        print(f"[fallback] m00 == 0, using mean centroid: ({cx}, {cy})")
 
-    return False
+    return cx, cy
+
+
+from scipy.spatial.distance import cdist
+
+
+def are_centroids_close(current, previous, max_distance=30):
+    if not current or not previous:
+        return False
+    distances = cdist(current, previous)
+    return np.any(distances < max_distance)
