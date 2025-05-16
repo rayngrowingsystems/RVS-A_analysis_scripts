@@ -99,6 +99,7 @@ def execute(script_name, settings, mask_file_name, preview=False):
     buffer_roi_ratio = script_options["buffer_roi_ratio"]
     threshold_distance = script_options["threshold_distance"]
     show_zones = script_options["show_zones"]
+    write_date_time = script_options["write_date_time"]
 
     # Session handling
     session_data = settings["experimentSettings"].get("sessionData", {})
@@ -301,14 +302,15 @@ def execute(script_name, settings, mask_file_name, preview=False):
             buffer_radius = int(radius * roi_center_ratio)
             cv2.circle(vis_img, roi_centroid, buffer_radius, (255, 255, 255), pcv.params.line_thickness)
 
+        if write_date_time:
+            draw_timestamp_label(vis_img, img_date_time)
+
     # Update session
     temp_data["detection_info"] = detection_info.to_dict()
     temp_data["centroid_history"] = centroid_history
     temp_data["outer_centroid_history"] = outer_centroid_history
     session_data["temporary"] = temp_data
     return_list.append(("session_data", session_data))
-
-
 
     pseudo_rgb_file_name = os.path.normpath(f"{out_folder['images']}/{image_name}_pseudoRGB.png")
     print("Writing image to " + pseudo_rgb_file_name)
@@ -323,15 +325,16 @@ def execute(script_name, settings, mask_file_name, preview=False):
     if preview:
         return pseudo_rgb_file_name
 
-    mask_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_mask.png")
-    print("Writing image to " + mask_file_name)
-    pcv.print_image(img=mask_copy, filename=mask_file_name)
-    return_list.append(
-        (
-            "image_mask",
-            mask_file_name
+    if mask_out:
+        mask_file_name = os.path.normpath(f"{out_folder['visuals']}/{image_name}_mask.png")
+        print("Writing image to " + mask_file_name)
+        pcv.print_image(img=mask_copy, filename=mask_file_name)
+        return_list.append(
+            (
+                "image_mask",
+                mask_file_name
+            )
         )
-    )
 
     # write detection table
     data_file_name = os.path.normpath(f"{out_folder['data']}/plant_detection.csv")
@@ -516,3 +519,23 @@ def are_centroids_close(current, previous, max_distance=30):
     distances = cdist(current, previous)
     #return np.any(distances < max_distance)
     return np.all(np.min(distances, axis=1) < max_distance)
+
+
+def draw_timestamp_label(image, text, position=(10, 25), font_scale=0.6, font_thickness=1):
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    text_color = (0, 0, 0)  # black text
+    bg_color = (255, 255, 255)  # white background
+
+    # Get text size
+    (text_width, text_height), _ = cv2.getTextSize(text, font, font_scale, font_thickness)
+
+    # Define background rectangle coords
+    x, y = position
+    bg_tl = (x - 5, y - text_height - 5)  # top-left with padding
+    bg_br = (x + text_width + 5, y + 5)   # bottom-right with padding
+
+    # Draw background rectangle
+    cv2.rectangle(image, bg_tl, bg_br, bg_color, cv2.FILLED)
+
+    # Put text over it
+    cv2.putText(image, text, (x, y), font, font_scale, text_color, font_thickness, cv2.LINE_AA)
