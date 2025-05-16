@@ -205,7 +205,7 @@ def execute(script_name, settings, mask_file_name, preview=False):
 
                 cx, cy = get_object_centroid(cnt)
                 centroids_in_roi.append((cx, cy))
-                centroid_history[i].append(centroids_in_roi)
+
 
                 cross_color = COLOR_ORANGE
 
@@ -213,7 +213,7 @@ def execute(script_name, settings, mask_file_name, preview=False):
                     if detection_info.at[i, "potential_intrusion"] and len(centroid_history[i]) >= 2:
                         # Get previous centroids (from last timepoint)
                         previous_centroids = centroid_history[i][-2]
-                        current_centroids = centroid_history[i][-1]
+                        current_centroids = centroids_in_roi
                         print(
                             f"Center object in ROI {i} detected!"
                             f"Checking if this is just the previously detected intruder...")
@@ -221,6 +221,7 @@ def execute(script_name, settings, mask_file_name, preview=False):
                         if are_centroids_close(current_centroids, previous_centroids, max_distance=threshold_distance):
                             cross_color = COLOR_RED
                             print(f"⚠️ Center object in ROI {i} is likely continuation of previous intrusion.")
+                            print(previous_centroids)
                             # keep potential_intrusion flag, skip emergence_time
                         else:
                             cross_color = COLOR_GREEN
@@ -243,7 +244,7 @@ def execute(script_name, settings, mask_file_name, preview=False):
                         f"— likely intrusion, looking deeper ... ({img_date_time})")
 
                     previous_outer = outer_centroid_history[i][-1]
-                    current_centroids = centroid_history[i][-1]
+                    current_centroids = centroids_in_roi
 
                     if are_centroids_close(current_centroids, previous_outer, max_distance=threshold_distance):
                         print(f"⚠️ Edge object in ROI {i} close to previous object in buffer — likely intrusion")
@@ -251,7 +252,7 @@ def execute(script_name, settings, mask_file_name, preview=False):
                             detection_info.at[i, "potential_intrusion"] = img_date_time
                         cross_color = COLOR_RED
                     elif (detection_info.at[i, "potential_intrusion"] and
-                          are_centroids_close(current_centroids, centroid_history[i][-2], max_distance=threshold_distance)):
+                          are_centroids_close(current_centroids, centroid_history[i][-1], max_distance=threshold_distance)):
                         print(
                             f"⚠️ Edge object in ROI {i} close to previous edge object — "
                             f"likely continuation of previous intrusion.")
@@ -268,6 +269,8 @@ def execute(script_name, settings, mask_file_name, preview=False):
                     cv2.drawMarker(mask_copy, (cx, cy), cross_color, markerType=cv2.MARKER_CROSS,
                                    markerSize=cross_size, thickness=2)
 
+            centroid_history[i].append(centroids_in_roi)
+
         if object_in_buffer and not object_in_roi:
             print(f"Outer activity detected at ROI {i}")
             detection_info.at[i, "outer_activity"] = img_date_time
@@ -276,7 +279,7 @@ def execute(script_name, settings, mask_file_name, preview=False):
             for cnt in buffer_contours:
                 cx, cy = get_object_centroid(cnt)
                 centroids_in_buffer.append((cx, cy))
-                outer_centroid_history[i].append(centroids_in_buffer)
+            outer_centroid_history[i].append(centroids_in_buffer)
 
         if detection_info.at[i, "emergence_time"]:
             color = COLOR_GREEN
@@ -511,4 +514,5 @@ def are_centroids_close(current, previous, max_distance=30):
     if not current or not previous:
         return False
     distances = cdist(current, previous)
-    return np.any(distances < max_distance)
+    #return np.any(distances < max_distance)
+    return np.all(np.min(distances, axis=1) < max_distance)
